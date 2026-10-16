@@ -1,0 +1,284 @@
+{
+  "name": "@zip.js/zip.js",
+  "description": "A JavaScript library to zip and unzip files in the browser, Deno and Node.js",
+  "author": "Gildas Lormeau",
+  "license": "BSD-3-Clause",
+  "version": "2.23.0",
+  "type": "module",
+  "keywords": [
+    "zip",
+    "unzip",
+    "browser",
+    "web",
+    "aes-256",
+    "aes-192",
+    "aes-128",
+    "zip-crypto",
+    "encryption",
+    "zip64",
+    "web-streams",
+    "compression-streams",
+    "web-crypto",
+    "web-workers",
+    "deno",
+    "node.js",
+    "multi-core",
+    "split-zip",
+    "usdz",
+    "deflate64",
+    "wasm"
+  ],
+  "engines": {
+    "deno": ">=1.0.0",
+    "node": ">=18.0.0",
+    "bun": ">=0.7.0"
+  },
+  "scripts": {
+    "version": "node ./sync-versions.js && git add deno.json lib/core/version.js",
+    "bump-patch": "npm version patch --no-git-tag-version && npm run bump-commit",
+    "bump-minor": "npm version minor --no-git-tag-version && npm run bump-commit",
+    "bump-major": "npm version major --no-git-tag-version && npm run bump-commit",
+    "bump-commit": "npm run build && git commit -m \"bump up version\" package.json package-lock.json deno.json lib/core/version.js dist index.cjs index-native.cjs index.min.js index-native.min.js lib/core/web-worker-inline-wasm.js lib/core/web-worker-inline-native.js",
+    "release": "sh ./release.sh",
+    "lint": "npx eslint . && deno lint",
+    "test": "npm run test-ci && npm run test-bun && npm run test-bun-dist",
+    "test-ci": "npm run test-registration && npm run test-node && npm run test-deno && npm run test-node-dist && npm run test-deno-dist && npm run test-web-streams-polyfill && npm run test-deno-polyfill && npm run test-fidelity && npm run test-types && npm run test-api-symmetry && npm run test-api-shape && npm run test-api-mangling && npm run test-api-exports",
+    "test-browsers": "npm run test-chrome && npm run test-firefox && npm run test-safari",
+    "serve-tests": "http-server -p 8888 -c-1 .",
+    "test-all": "npm run lint && npm run test && npm run test-browsers",
+    "build": "npx rollup -c",
+    "build-dev": "npx rollup -c --environment DEV",
+    "build-doc-api": "npx typedoc",
+    "build-doc-markdown": "npx typedoc --plugin typedoc-plugin-markdown --disableSources --out ./docs",
+    "test-deno": "cd ./tests && deno test --allow-read ./deno-runner.js",
+    "test-web-streams-polyfill": "cd ./tests && deno run --allow-read ./web-streams-polyfill-runner.js",
+    "test-deno-polyfill": "cd ./tests && deno test --allow-read ./deno-polyfill-runner.js",
+    "test-node": "cd ./tests && node ./node-runner.js",
+    "test-bun": "cd ./tests && bun test ./bun-runner.js",
+    "test-deno-dist": "./tests/dist-runner.sh deno",
+    "test-node-dist": "./tests/dist-runner.sh node",
+    "test-bun-dist": "./tests/dist-runner.sh bun",
+    "test-types": "tsc -p ./tests/types/tsconfig.json && tsc -p ./tests/types/tsconfig-declarations.json",
+    "test-registration": "node ./tests/registration.js",
+    "test-fidelity": "deno run --allow-read ./tests/fidelity/run.js",
+    "test-api-symmetry": "node ./tests/api-symmetry/audit.js",
+    "test-api-shape": "node ./tests/api-symmetry/shape.js",
+    "test-api-mangling": "node ./tests/api-symmetry/mangling.js",
+    "test-api-exports": "node ./tests/api-symmetry/exports.js",
+    "test-firefox": "node ./tests/browser-runner.js firefox",
+    "test-chrome": "node ./tests/browser-runner.js chrome",
+    "test-safari": "node ./tests/browser-runner.js safari"
+  },
+  "main": "./index.cjs",
+  "module": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    "./package.json": "./package.json",
+    "./dist/zip-web-worker.js": "./dist/zip-web-worker.js",
+    "./dist/zip-web-worker-native.js": "./dist/zip-web-worker-native.js",
+    "./dist/zip-module.wasm": "./dist/zip-module.wasm",
+    ".": {
+      "react-native": {
+        "types": "./index.d.cts",
+        "default": "./index-native.cjs"
+      },
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./index.js"
+      },
+      "require": {
+        "types": "./index.d.cts",
+        "default": "./index.cjs"
+      }
+    },
+    "./external": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./lib/zip-fs-external.js"
+      }
+    },
+    "./mime-types": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./lib/zip-mime-types.js"
+      }
+    },
+    "./worker": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./lib/core/web-worker-base.js"
+      }
+    },
+    "./lib/zip-core-external.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./lib/zip-core-external.js"
+      }
+    },
+    "./lib/zip-fs-core-external.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./lib/zip-fs-core-external.js"
+      }
+    },
+    "./lib/zip-core-custom.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./lib/zip-core-custom.js"
+      }
+    },
+    "./dist/zip-fs-external.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./dist/zip-fs-external.js"
+      }
+    },
+    "./dist/zip-fs-external.min.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./dist/zip-fs-external.min.js"
+      }
+    },
+    "./dist/zip-fs-core-external.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./dist/zip-fs-core-external.js"
+      }
+    },
+    "./dist/zip-fs-core-external.min.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./dist/zip-fs-core-external.min.js"
+      }
+    },
+    "./dist/zip-core-external.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./dist/zip-core-external.js"
+      }
+    },
+    "./dist/zip-core-external.min.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./dist/zip-core-external.min.js"
+      }
+    },
+    "./index-native.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./index-native.js"
+      },
+      "require": {
+        "types": "./index.d.cts",
+        "default": "./index-native.cjs"
+      }
+    },
+    "./index.cjs": {
+      "types": "./index.d.cts",
+      "default": "./index.cjs"
+    },
+    "./index-native.cjs": {
+      "types": "./index.d.cts",
+      "default": "./index-native.cjs"
+    },
+    "./index.min.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./index.min.js"
+      }
+    },
+    "./index-native.min.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./index-native.min.js"
+      }
+    },
+    "./lib/zip-core-reader.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./lib/zip-core-reader.js"
+      }
+    },
+    "./lib/zip-core-writer.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./lib/zip-core-writer.js"
+      }
+    },
+    "./lib/zip-fs.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./lib/zip-fs-wasm.js"
+      }
+    },
+    "./lib/zip-fs-native.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./lib/zip-fs-native.js"
+      }
+    },
+    "./lib/zip-core.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./lib/zip-core-wasm.js"
+      }
+    },
+    "./lib/zip-core-native.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./lib/zip-core-native.js"
+      }
+    },
+    "./lib/zip-fs-core.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./lib/zip-fs-core-wasm.js"
+      }
+    },
+    "./lib/zip-fs-core-native.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./lib/zip-fs-core-native.js"
+      }
+    },
+    "./lib/zip.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./lib/zip-wasm.js"
+      }
+    },
+    "./lib/zip-native.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./lib/zip-native.js"
+      }
+    },
+    "./lib/core/web-worker-base.js": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./lib/core/web-worker-base.js"
+      }
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gildas-lormeau/zip.js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gildas-lormeau/zip.js/issues"
+  },
+  "homepage": "https://gildas-lormeau.github.io/zip.js",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@rollup/plugin-replace": "^6.0.3",
+    "@rollup/plugin-terser": "^1.0.0",
+    "eslint": "^10.8.1",
+    "http-server": "^14.1.1",
+    "rollup": "^4.62.4",
+    "selenium-webdriver": "^4.47.0",
+    "typedoc": "^0.28.20",
+    "typedoc-plugin-markdown": "^4.12.0",
+    "web-streams-polyfill": "^4.3.0",
+    "web-worker": "^1.5.0"
+  }
+}

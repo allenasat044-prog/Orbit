@@ -1,0 +1,26 @@
+//This file is automatically rebuilt by the Cesium build process.
+export default "/**\n\
+ * This vertex shader derives each vertex's UV coordinate within the model's clipping rectangle (its ellipsoid footprint).\n\
+ * This UV is a normalized vec2, where [0,1] spans the rectangle. The fragment shader then compares each fragment's uv against the clipping polygons,\n\
+ * whose positions live in the same uv space. See {@link ModelClippingPolygonsStageFS.glsl}.\n\
+ *\n\
+ * To get this uv, we need each vertex's geodetic (lon, lat), normalized against the model's rectangle.\n\
+ * What makes this complicated is precision: we *cannot* use v_positionWC, because it only has 32-bit precision and is too large to be represented precisely.\n\
+ * (Moreover, even representing v_positionWC with hi/lo components to emulate double precision, we could not perform the trig and other ops needed to derive lat/lon.)\n\
+ * Instead, we use v_positionEC, and let {@link czm_eyeToCartographicDelta} compute a geodetic delta (long, lat) between the eye and vertex. This delta is a smaller quantity (and gets smaller and more precise as we zoom in).\n\
+ * Then, we can combine this delta with the eye's own UV coordinate within the model's rectangle to obtain the vertex's uv coordinate.\n\
+ * Note that both terms are relative to the eye of the pass being rendered, which is not the scene camera in passes such as shadow casting.\n\
+ *\n\
+ * Ultimately, all this shader does is some geometry to obtain the vertex's relative position within the bounds of the model's geodetic rectangle.\n\
+ * The complexity arises from doing so in a way that preserves precision.\n\
+ */\n\
+void modelClippingPolygonsStage()\n\
+{\n\
+    // (We don't need the height component)\n\
+    vec2 delta = czm_eyeToCartographicDelta(v_positionEC).xy;\n\
+\n\
+    // Express the vertex's position within the model's rectangle as a normalized uv coordinate, by adding the eye's uv and scaling by the rectangle's size.\n\
+    // Since the eye's UV is computed on the CPU in double precision, and gets more precise as one zooms in, this ensures good precision on the vertex's uv.\n\
+    v_clippingUv = u_clippingCameraUv + delta * u_clippingRectangleInverseSize;\n\
+}\n\
+";

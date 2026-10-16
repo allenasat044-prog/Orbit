@@ -1,0 +1,310 @@
+/*
+ Copyright (c) 2025 Gildas Lormeau. All rights reserved.
+
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are met:
+
+ 1. Redistributions of source code must retain the above copyright notice,
+ this list of conditions and the following disclaimer.
+
+ 2. Redistributions in binary form must reproduce the above copyright 
+ notice, this list of conditions and the following disclaimer in 
+ the documentation and/or other materials provided with the distribution.
+
+ 3. The names of the authors may not be used to endorse or promote products
+ derived from this software without specific prior written permission.
+
+ THIS SOFTWARE IS PROVIDED ''AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES,
+ INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL JCRAFT,
+ INC. OR ANY CONTRIBUTORS TO THIS SOFTWARE BE LIABLE FOR ANY DIRECT, INDIRECT,
+ INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+ OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/* global ReadableStream, WritableStream */
+
+const FORMAT_DEFLATE = "deflate";
+const FORMAT_DEFLATE_RAW = "deflate-raw";
+const FORMAT_DEFLATE64_RAW = "deflate64-raw";
+const FORMAT_GZIP = "gzip";
+const Z_MEM_ERROR = -4;
+const Z_MEM_ERROR_CODE = "Z_MEM_ERROR";
+const COMPRESSION_FORMATS = [FORMAT_DEFLATE, FORMAT_DEFLATE_RAW, FORMAT_GZIP];
+const DECOMPRESSION_FORMATS = [FORMAT_DEFLATE, FORMAT_DEFLATE_RAW, FORMAT_GZIP, FORMAT_DEFLATE64_RAW];
+
+let wasm, malloc, free, memory, initError;
+
+export function setWasmExports(wasmAPI) {
+	wasm = wasmAPI;
+	({ malloc, free, memory } = wasm);
+	if (typeof malloc !== "function" || typeof free !== "function" || !memory) {
+		wasm = malloc = free = memory = null;
+		throw new Error("Invalid WASM module");
+	}
+}
+
+export function setInitError(error) {
+	initError = error;
+}
+
+export function resetWasmExports() {
+	wasm = malloc = free = memory = initError = null;
+}
+
+function setZlibCode(error, result) {
+	if (result === Z_MEM_ERROR) {
+		error.code = Z_MEM_ERROR_CODE;
+	}
+	return error;
+}
+
+function _make(isCompress, type, options = {}) {
+	if (!(isCompress ? COMPRESSION_FORMATS : DECOMPRESSION_FORMATS).includes(type)) {
+		throw new TypeError("Unsupported format: " + type);
+	}
+	if (!wasm) {
+		const error = new Error("WASM module not loaded");
+		error.cause = initError;
+		throw error;
+	}
+	const level = (typeof options.level === "number") ? options.level : -1;
+	const outBufferSize = (typeof options.outBuffer === "number") ? options.outBuffer : 64 * 1024;
+	const inBufferSize = (typeof options.inBufferSize === "number") ? options.inBufferSize : 64 * 1024;
+	const state = { out: 0, in: 0, inBufferSize: 0, streamHandle: 0, streamEnded: false };
+	let readableController, writableController, resolveWrite, cancelReason;
+	let backpressure = true;
+	let cancelled = false;
+	initStream();
+	const readable = new ReadableStream({
+		start(controller) {
+			readableController = controller;
+		},
+		pull() {
+			backpressure = false;
+			resumeWrite();
+		},
+		cancel(reason) {
+			cancelled = true;
+			cancelReason = reason;
+			disposeStream(state);
+			writableController.error(reason);
+			resumeWrite();
+		}
+	}, { highWaterMark: 0 });
+	const writable = new WritableStream({
+		start(controller) {
+			writableController = controller;
+		},
+		async write(chunk) {
+			if (backpressure) {
+				await new Promise(resolve => resolveWrite = resolve);
+			}
+			if (cancelled) {
+				throw cancelReason;
+			}
+			try {
+				processChunk(chunk);
+			} catch (error) {
+				disposeStream(state);
+				readableController.error(error);
+				throw error;
+			}
+		},
+		close() {
+			if (cancelled) {
+				return;
+			}
+			try {
+				flushStream();
+			} catch (error) {
+				disposeStream(state);
+				readableController.error(error);
+				throw error;
+			}
+			const result = disposeStream(state);
+			if (result !== 0) {
+				const error = setZlibCode(new Error("end error:" + result), result);
+				readableController.error(error);
+				throw error;
+			}
+			readableController.close();
+		},
+		abort(reason) {
+			disposeStream(state);
+			readableController.error(reason);
+		}
+	}, { highWaterMark: 1 });
+	return { readable, writable };
+
+	function initStream() {
+		try {
+			let result;
+			state.out = malloc(outBufferSize);
+			state.in = malloc(inBufferSize);
+			state.inBufferSize = inBufferSize;
+			if (!state.out || !state.in) {
+				throw setZlibCode(new Error("allocation failed"), Z_MEM_ERROR);
+			}
+			if (isCompress) {
+				state._process = wasm.deflate_process;
+				state._last_consumed = wasm.deflate_last_consumed;
+				state._end = wasm.deflate_end;
+				state.streamHandle = wasm.deflate_new();
+				if (type === FORMAT_GZIP) {
+					result = wasm.deflate_init_gzip(state.streamHandle, level);
+				} else if (type === FORMAT_DEFLATE_RAW) {
+					result = wasm.deflate_init_raw(state.streamHandle, level);
+				} else {
+					result = wasm.deflate_init(state.streamHandle, level);
+				}
+			} else {
+				if (type === FORMAT_DEFLATE64_RAW) {
+					state._process = wasm.inflate9_process;
+					state._last_consumed = wasm.inflate9_last_consumed;
+					state._end = wasm.inflate9_end;
+					state.streamHandle = wasm.inflate9_new();
+					result = wasm.inflate9_init_raw(state.streamHandle);
+				} else {
+					state._process = wasm.inflate_process;
+					state._last_consumed = wasm.inflate_last_consumed;
+					state._end = wasm.inflate_end;
+					state.streamHandle = wasm.inflate_new();
+					if (type === FORMAT_DEFLATE_RAW) {
+						result = wasm.inflate_init_raw(state.streamHandle);
+					} else if (type === FORMAT_GZIP) {
+						result = wasm.inflate_init_gzip(state.streamHandle);
+					} else {
+						result = wasm.inflate_init(state.streamHandle);
+					}
+				}
+			}
+			if (result !== 0) {
+				throw setZlibCode(new Error("init failed:" + result), result);
+			}
+		} catch (error) {
+			disposeStream(state);
+			throw error;
+		}
+	}
+
+	function processChunk(chunk) {
+		const heap = new Uint8Array(memory.buffer);
+		const process = state._process;
+		const last_consumed = state._last_consumed;
+		const out = state.out;
+		let offset = 0;
+		while (offset < chunk.length) {
+			if (state.streamEnded) {
+				throw new Error("trailing data after the end of the stream");
+			}
+			const toRead = Math.min(chunk.length - offset, 32 * 1024);
+			if (!state.in || state.inBufferSize < toRead) {
+				if (state.in && free) {
+					free(state.in);
+					state.in = 0;
+				}
+				state.in = malloc(toRead);
+				state.inBufferSize = toRead;
+				if (!state.in) {
+					throw setZlibCode(new Error("allocation failed"), Z_MEM_ERROR);
+				}
+			}
+			heap.set(chunk.subarray(offset, offset + toRead), state.in);
+			const result = process(state.streamHandle, state.in, toRead, out, outBufferSize, 0);
+			// checked before the byte count is used, so a status code can never be read as one
+			const code = (result >> 24) & 0xff;
+			const signedCode = (code & 0x80) ? code - 256 : code;
+			if (signedCode < 0) {
+				throw setZlibCode(new Error("process error:" + signedCode), signedCode);
+			}
+			const prod = result & 0x00ffffff;
+			if (prod) {
+				enqueue(heap.slice(out, out + prod));
+			}
+			const consumed = last_consumed(state.streamHandle);
+			if (code === 1) {
+				state.streamEnded = true;
+			} else if (consumed === 0 && prod === 0) {
+				break;
+			}
+			offset += consumed;
+		}
+	}
+
+	function flushStream() {
+		const heap = new Uint8Array(memory.buffer);
+		const process = state._process;
+		const out = state.out;
+		while (true) {
+			const result = process(state.streamHandle, 0, 0, out, outBufferSize, 4);
+			const code = (result >> 24) & 0xff;
+			const signedCode = (code & 0x80) ? code - 256 : code;
+			if (signedCode < 0) {
+				throw setZlibCode(new Error("process error:" + signedCode), signedCode);
+			}
+			const produced = result & 0x00ffffff;
+			if (produced) {
+				enqueue(heap.slice(out, out + produced));
+			}
+			if (code === 1 || produced === 0) {
+				break;
+			}
+		}
+	}
+
+	function enqueue(chunk) {
+		backpressure = true;
+		readableController.enqueue(chunk);
+	}
+
+	function resumeWrite() {
+		if (resolveWrite) {
+			const resolve = resolveWrite;
+			resolveWrite = null;
+			resolve();
+		}
+	}
+
+	function disposeStream(state) {
+		let endResult = 0;
+		if (state.streamHandle && state._end) {
+			endResult = state._end(state.streamHandle);
+		}
+		state.streamHandle = 0;
+		if (state.in && free) {
+			free(state.in);
+		}
+		state.in = 0;
+		if (state.out && free) {
+			free(state.out);
+		}
+		state.out = 0;
+		return endResult;
+	}
+}
+
+export class CompressionStreamZlib {
+	constructor(type = FORMAT_DEFLATE, options) {
+		return _make(true, type, options);
+	}
+}
+export class DecompressionStreamZlib {
+	constructor(type = FORMAT_DEFLATE, options) {
+		return _make(false, type, options);
+	}
+}
+// These codecs are backed by the WASM module; they are unusable until setWasmExports() has run.
+// The worker uses this flag to know it must fall back to the native CompressionStream when the
+// module fails to load, rather than discarding a self-contained codec supplied through config.
+CompressionStreamZlib.requiresModule = true;
+DecompressionStreamZlib.requiresModule = true;
+// Constructing these classes before the module is loaded throws, so capability probes cannot rely
+// on trying the constructor; the formats are declared instead, the lists _make() checks a format
+// against before anything else.
+CompressionStreamZlib.supportedFormats = COMPRESSION_FORMATS;
+DecompressionStreamZlib.supportedFormats = DECOMPRESSION_FORMATS;
