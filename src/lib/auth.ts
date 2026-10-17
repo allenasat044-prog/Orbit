@@ -11,7 +11,7 @@ async function post(path: string, body: Record<string, string>): Promise<AuthRes
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      return { ok: false, error: data.message ?? data.error ?? `Request failed (${res.status})` };
+      return { ok: false, error: data.error?.message ?? data.message ?? `Request failed (${res.status})` };
     }
     if (data.token) localStorage.setItem(TOKEN_KEY, data.token);
     return { ok: true };
