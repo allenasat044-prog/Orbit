@@ -10,7 +10,8 @@
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
     "migrate": "node src/migrate-cli.js",
-    "test": "node --test"
+    "test": "node --test",
+    "cdse:check": "node src/scripts/cdse-check.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

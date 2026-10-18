@@ -1,12 +1,16 @@
+from __future__ import annotations
+
 import importlib.util
 import platform
 
 from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel, Field
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.models.registry import registry
+from app.raster import RasterError, extract_chip, raster_support, safe_path
 
 VERSION = "0.1.0"
 
@@ -32,6 +36,7 @@ def health():
         "python": platform.python_version(),
         "torch_installed": importlib.util.find_spec("torch") is not None,
         "models_registered": len(registry),
+        "raster": raster_support(),
     }
 
 
@@ -46,3 +51,21 @@ def get_model(model_id: str):
     if adapter is None:
         raise HTTPException(status_code=404, detail=f"Unknown model: {model_id}")
     return next(m for m in registry.list() if m["id"] == model_id)
+
+
+class ChipRequest(BaseModel):
+    path: str
+    out_path: str
+    lon: float = Field(ge=-180, le=180)
+    lat: float = Field(ge=-90, le=90)
+    size_px: int = Field(default=512, ge=64, le=2048)
+
+
+@app.exception_handler(RasterError)
+async def raster_error(_: Request, exc: RasterError):
+    return JSONResponse(status_code=exc.status, content={"error": {"code": exc.code, "message": exc.message}})
+
+
+@app.post("/raster/chip")
+def raster_chip(req: ChipRequest):
+    return extract_chip(safe_path(req.path), safe_path(req.out_path), req.lon, req.lat, req.size_px)

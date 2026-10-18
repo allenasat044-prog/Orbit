@@ -5,8 +5,9 @@ import rateLimit from "express-rate-limit";
 import { runCheck } from "./checks.js";
 import { HttpError, sendError } from "./errors.js";
 import { createAuthRouter } from "./auth/routes.js";
+import { createImageryRouter } from "./imagery/routes.js";
 
-export function createApp({ config, checks, providers, users }) {
+export function createApp({ config, checks, providers, users, acquisitions, geocoder, now, routers = [] }) {
   const app = express();
 
   app.disable("x-powered-by");
@@ -24,6 +25,7 @@ export function createApp({ config, checks, providers, users }) {
   );
 
   if (users) app.use("/api/auth", createAuthRouter({ config, users }));
+  if (acquisitions && geocoder) app.use("/api/imagery", createImageryRouter({ config, providers, acquisitions, geocoder, now }));
 
   app.get("/api/health", async (_req, res) => {
     const names = Object.keys(checks);
@@ -46,6 +48,8 @@ export function createApp({ config, checks, providers, users }) {
     );
     res.json({ items });
   });
+
+  for (const r of routers) app.use(r.path, r.router);
 
   app.use((req, res) => {
     sendError(res, 404, "not_found", `No route for ${req.method} ${req.path}`);

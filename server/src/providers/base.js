@@ -19,8 +19,12 @@ export class ImageryProvider {
     throw new NotImplementedError(`${this.id}: search not implemented`);
   }
 
-  async getAcquisition() {
-    throw new NotImplementedError(`${this.id}: getAcquisition not implemented`);
+  async getItem() {
+    throw new NotImplementedError(`${this.id}: getItem not implemented`);
+  }
+
+  isAllowedCursor() {
+    return false;
   }
 
   async listAssets() {
