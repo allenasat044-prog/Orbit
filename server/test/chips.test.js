@@ -237,7 +237,7 @@ test("chip job downloads the asset once, reuses it for new pins, and reuses iden
   assert.equal(c.chip_id, a.chip_id);
   assert.equal(c.reused, true);
   assert.notEqual(a.chip_id, b.chip_id);
-  assert.equal(chipKey(114.9, 67.4, 512), "114.90000,67.40000,512");
+  assert.equal(chipKey(114.9, 67.4, 512), "114.90000,67.40000,512,v2");
 });
 
 test("chip job fails clearly without a visual asset, a download URL, or a scene", async () => {

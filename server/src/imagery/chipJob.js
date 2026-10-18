@@ -9,7 +9,8 @@ export class JobError extends Error {
   }
 }
 
-export const chipKey = (lon, lat, size) => `${lon.toFixed(5)},${lat.toFixed(5)},${size}`;
+export const CHIP_VERSION = "v2";
+export const chipKey = (lon, lat, size) => `${lon.toFixed(5)},${lat.toFixed(5)},${size},${CHIP_VERSION}`;
 
 const extFor = (type) => (/jp2|jpeg ?2000/i.test(type ?? "") ? ".jp2" : /tiff/i.test(type ?? "") ? ".tif" : ".dat");
 

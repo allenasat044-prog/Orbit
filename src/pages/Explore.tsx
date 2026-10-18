@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Viewer, ImageryLayer, UrlTemplateImageryProvider, GeoJsonDataSource, Color, Rectangle, Entity,
-  Cartesian2, Cartesian3, Cartographic, LabelStyle, ScreenSpaceEventHandler, ScreenSpaceEventType, Math as CesiumMath,
+  Cartesian2, Cartesian3, Cartographic, LabelStyle, ScreenSpaceEventHandler, ScreenSpaceEventType, Math as CesiumMath, SingleTileImageryProvider,
 } from "cesium";
 import SearchGroup from "@/components/ui/v-group-18";
 import { getToken } from "@/lib/auth";
@@ -20,6 +20,13 @@ type Item = {
 };
 type Point = { lat: number; lon: number };
 type Chip = { id: string; image_url: string; width_px: number; height_px: number; pin_px: { x: number; y: number }; gsd_m: number | null; label: string };
+type Zoom = { px: number; name: string; km: string };
+
+const ZOOMS: Zoom[] = [
+  { px: 128, name: "Close", km: "1.3 km" },
+  { px: 256, name: "Medium", km: "2.6 km" },
+  { px: 512, name: "Wide", km: "5.1 km" },
+];
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -42,6 +49,7 @@ export default function Explore() {
   const viewer = useRef<Viewer | undefined>(undefined);
   const source = useRef<GeoJsonDataSource | undefined>(undefined);
   const pin = useRef<Entity | undefined>(undefined);
+  const overlay = useRef<ImageryLayer | undefined>(undefined);
   const onPick = useRef<(lat: number, lon: number) => void>(() => {});
   const [msg, setMsg] = useState(HINT);
   const [items, setItems] = useState<Item[]>([]);
@@ -51,6 +59,8 @@ export default function Explore() {
   const [point, setPoint] = useState<Point | null>(null);
   const [chip, setChip] = useState<Chip | null>(null);
   const [chipBusy, setChipBusy] = useState<string | null>(null);
+  const [zoomPx, setZoomPx] = useState(256);
+  const [smooth, setSmooth] = useState(true);
 
   useEffect(() => {
     const v = new Viewer(el.current!, {
@@ -83,6 +93,25 @@ export default function Explore() {
     if (fly) v.camera.flyTo({ destination: Cartesian3.fromDegrees(pt.lon, pt.lat, 150000) });
   };
 
+  const clearOverlay = () => {
+    const v = viewer.current;
+    if (v && overlay.current) { v.imageryLayers.remove(overlay.current, true); overlay.current = undefined; }
+    if (source.current) source.current.show = true;
+  };
+
+  const showOverlay = async (url: string, w: number, s: number, e: number, n: number) => {
+    const v = viewer.current;
+    if (!v) return;
+    clearOverlay();
+    const provider = await SingleTileImageryProvider.fromUrl(url, { rectangle: Rectangle.fromDegrees(w, s, e, n) });
+    overlay.current = v.imageryLayers.addImageryProvider(provider);
+    if (source.current) source.current.show = false;
+    const padX = (e - w) * 0.25, padY = (n - s) * 0.25;
+    v.camera.flyTo({ destination: Rectangle.fromDegrees(w - padX, s - padY, e + padX, n + padY) });
+  };
+
+  const closeChip = () => { clearOverlay(); setChip(null); };
+
   const draw = async (list: Item[]) => {
     const v = viewer.current;
     if (!v) return undefined;
@@ -108,7 +137,7 @@ export default function Explore() {
       setCredit([data.attribution?.imagery, data.attribution?.geocoding].filter(Boolean).join(" · "));
       await draw(all);
       const pt: Point | null = data.point ?? (append ? point : null);
-      if (!append) { setPoint(pt); setChip(null); }
+      if (!append) { setPoint(pt); clearOverlay(); setChip(null); }
       if (!append && pt) placePin(pt, pinLabel ?? data.place?.name ?? `${pt.lat.toFixed(4)}, ${pt.lon.toFixed(4)}`, true);
       const where = pt ? ` at ${pt.lat.toFixed(4)}, ${pt.lon.toFixed(4)}` : "";
       if (!all.length) setMsg(`No scene covers this exact point in the last 30 days with cloud cover up to 30%.`);
@@ -155,7 +184,7 @@ export default function Explore() {
         setItems((prev) => prev.map((i) => (i.external_id === item.external_id ? { ...i, ingested: true, id: acqId } : i)));
       }
       setMsg("Cutting a preview at your pin. The first time for a scene also downloads it, which can take a minute…");
-      const res = await fetch(`/api/imagery/${acqId}/chip`, { method: "POST", headers: auth, body: JSON.stringify({ lat: point.lat, lon: point.lon, size_px: 512 }) });
+      const res = await fetch(`/api/imagery/${acqId}/chip`, { method: "POST", headers: auth, body: JSON.stringify({ lat: point.lat, lon: point.lon, size_px: zoomPx }) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { setMsg(data?.error?.message ?? `Preview failed (${res.status})`); return; }
       let chipId: string | undefined = data.chip?.id;
@@ -176,7 +205,9 @@ export default function Explore() {
       if (!cr.ok) { setMsg(cd?.error?.message ?? "Could not load the preview."); return; }
       const c = cd.chip;
       setChip({ id: c.id, image_url: c.image_url, width_px: c.width_px, height_px: c.height_px, pin_px: c.pin_px, gsd_m: c.gsd_m, label: `${new Date(item.acquired_at).toISOString().slice(0, 10)} · ${item.platform ?? item.collection}` });
-      setMsg("Preview ready.");
+      const ring: number[][] = c.bounds.coordinates[0];
+      await showOverlay(c.image_url, ring[0][0], ring[2][1], ring[2][0], ring[0][1]);
+      setMsg("Preview placed on the globe at your pin.");
     } catch {
       setMsg("Can't reach the server. Is the backend running on port 3000?");
     } finally {
@@ -207,6 +238,21 @@ export default function Explore() {
       <div className="flex items-center gap-4"><SearchGroup onSearch={onSearch} /><span className="text-sm text-muted-foreground">{msg}</span></div>
       <div ref={el} className="h-[70vh] w-full overflow-hidden rounded-2xl border border-white/10" />
       {items.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Preview area around the pin:</span>
+          {ZOOMS.map((z) => (
+            <button
+              key={z.px}
+              type="button"
+              onClick={() => setZoomPx(z.px)}
+              className={`rounded-md border px-2 py-1 text-xs ${zoomPx === z.px ? "border-[#8daaff] text-[#8daaff]" : "border-white/10 text-muted-foreground"}`}
+            >
+              {z.name} · {z.km}
+            </button>
+          ))}
+        </div>
+      )}
+      {items.length > 0 && (
         <ul className="max-h-60 space-y-1 overflow-auto text-sm">
           {items.map((i) => (
             <li key={i.external_id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 px-3 py-2">
@@ -229,15 +275,21 @@ export default function Explore() {
         <div className="space-y-2 rounded-2xl border border-white/10 p-3">
           <div className="flex items-center justify-between text-sm">
             <span>{chip.label} · {chip.width_px}×{chip.height_px} px{chip.gsd_m ? ` · ${chip.gsd_m} m/px` : ""}</span>
-            <button type="button" onClick={() => setChip(null)} className="text-xs text-muted-foreground hover:text-white">Close</button>
+            <span className="flex items-center gap-3">
+              <button type="button" onClick={() => setSmooth((v) => !v)} className="text-xs text-[#8daaff]">{smooth ? "Show pixels" : "Smooth"}</button>
+              <button type="button" onClick={closeChip} className="text-xs text-muted-foreground hover:text-white">Close preview</button>
+            </span>
           </div>
-          <div className="relative inline-block max-w-full">
-            <img src={chip.image_url} alt="Satellite preview at the pin" width={chip.width_px} height={chip.height_px} className="block max-w-full rounded-lg" />
+          <div className="relative inline-block w-full max-w-[512px]">
+            <img src={chip.image_url} alt="Satellite preview at the pin" width={chip.width_px} height={chip.height_px} className="block w-full max-w-[512px] rounded-lg" style={{ imageRendering: smooth ? "auto" : "pixelated" }} />
             <span
               className="pointer-events-none absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-red-500"
               style={{ left: `${(chip.pin_px.x / chip.width_px) * 100}%`, top: `${(chip.pin_px.y / chip.height_px) * 100}%` }}
             />
           </div>
+          <p className="text-xs text-muted-foreground">
+            North is up and the red ring is your pin. Each pixel covers about {chip.gsd_m ?? 10} × {chip.gsd_m ?? 10} m on the ground, which is the finest detail Sentinel-2 true colour has: roads, fields, water and large buildings show, but not individual houses or cars.
+          </p>
         </div>
       )}
       {next && <button type="button" disabled={busy} onClick={loadMore} className="text-sm text-[#8daaff] disabled:text-muted-foreground">Load more</button>}

@@ -7,7 +7,7 @@ from rasterio.transform import from_origin
 from rasterio.warp import transform
 
 from app.main import app
-from app.raster import RasterError, extract_chip, raster_support
+from app.raster import RasterError, extract_chip, meters_per_degree, raster_support
 
 client = TestClient(app)
 CRS = "EPSG:32650"
@@ -41,7 +41,7 @@ def test_jp2_support_is_reported():
     assert raster_support()["jp2"] is True
 
 
-def test_chip_is_centered_on_the_pin_and_georeferenced(storage):
+def test_chip_is_north_up_centred_on_the_pin_and_metrically_square(storage):
     src = storage / "scene.jp2"
     make_tci(src)
     lon, lat = lonlat_of(600, 500)
@@ -50,31 +50,58 @@ def test_chip_is_centered_on_the_pin_and_georeferenced(storage):
     assert r["pin_px"] == {"x": 128, "y": 128}
     assert r["gsd_m"] == 10.0
     assert r["crs"] == CRS
-    assert r["nodata_fraction"] == 0
+    ring = r["bounds"]["coordinates"][0]
+    west, north = ring[0]
+    east, south = ring[2]
+    assert ring[0] == ring[-1] and west < east and south < north
+    assert abs((west + east) / 2 - lon) < 1e-9 and abs((north + south) / 2 - lat) < 1e-9
+    per_lat, per_lon = meters_per_degree(lat)
+    assert abs((east - west) * per_lon - 2560) < 30
+    assert abs((north - south) * per_lat - 2560) < 30
     img = Image.open(storage / "chips" / "a.png")
     assert img.size == (256, 256) and img.mode == "RGB"
-    ring = r["bounds"]["coordinates"][0]
-    assert len(ring) == 5 and ring[0] == ring[-1]
-    xs = [p[0] for p in ring[:4]]
-    assert min(xs) < lon < max(xs)
     assert len(r["sha256"]) == 64
 
 
-def test_chip_window_is_shifted_at_the_scene_edge_and_pin_moves(storage):
+def test_a_marker_at_the_pin_lands_in_the_centre_of_the_chip_despite_grid_rotation(storage):
     src = storage / "scene.jp2"
     make_tci(src)
-    lon, lat = lonlat_of(10, 10)
+    with rasterio.open(src, "r+") as ds:
+        pass
+    data = np.zeros((3, 1000, 1200), np.uint8)
+    data[:] = 40
+    data[:, 496:505, 596:605] = 255
+    with rasterio.open(src, "w", driver="JP2OpenJPEG", width=1200, height=1000, count=3, dtype="uint8", crs=CRS, transform=from_origin(X0, Y0, RES, RES), QUALITY="100", REVERSIBLE="YES") as dst:
+        dst.write(data)
+    lon, lat = lonlat_of(600, 500)
+    extract_chip(src, storage / "m.png", lon, lat, 128)
+    arr = np.array(Image.open(storage / "m.png"))[:, :, 0]
+    ys, xs = np.where(arr > 200)
+    assert len(xs) > 0
+    assert abs(xs.mean() - 64) < 2.5 and abs(ys.mean() - 64) < 2.5
+
+
+def test_pixel_values_come_from_the_right_place_in_the_scene(storage):
+    src = storage / "scene.jp2"
+    make_tci(src)
+    lon, lat = lonlat_of(800, 300)
+    r = extract_chip(src, storage / "v.png", lon, lat, 64)
+    arr = np.array(Image.open(storage / "v.png"))
+    with rasterio.open(src) as ds:
+        expected = ds.read(1)[300, 800]
+    assert abs(int(arr[32, 32, 0]) - int(expected)) <= 3
+    assert r["nodata_fraction"] == 0
+
+
+def test_chip_near_the_scene_edge_keeps_the_pin_centred_and_leaves_black_outside(storage):
+    src = storage / "scene.jp2"
+    make_tci(src)
+    lon, lat = lonlat_of(100, 100)
     r = extract_chip(src, storage / "b.png", lon, lat, 256)
-    assert (r["width_px"], r["height_px"]) == (256, 256)
-    assert r["pin_px"] == {"x": 10, "y": 10}
-
-
-def test_chip_shrinks_when_the_scene_is_smaller_than_requested(storage):
-    src = storage / "small.jp2"
-    make_tci(src, w=100, h=80)
-    lon, lat = lonlat_of(50, 40)
-    r = extract_chip(src, storage / "c.png", lon, lat, 512)
-    assert (r["width_px"], r["height_px"]) == (100, 80)
+    assert r["pin_px"] == {"x": 128, "y": 128}
+    assert 0.05 < r["nodata_fraction"] < 0.5
+    arr = np.array(Image.open(storage / "b.png"))
+    assert arr[0, 0].sum() == 0 and arr[200, 200].sum() > 0
 
 
 def test_point_outside_the_raster_is_rejected(storage):
@@ -86,14 +113,20 @@ def test_point_outside_the_raster_is_rejected(storage):
     assert e.value.code == "point_outside_raster"
 
 
-def test_mostly_empty_chip_is_rejected_and_nothing_is_written(storage):
-    src = storage / "edge.jp2"
-    make_tci(src, blank_cols=700)
+def test_mostly_empty_chips_are_rejected_and_nothing_is_written(storage):
+    edge = storage / "edge.jp2"
+    make_tci(edge, blank_cols=700)
     lon, lat = lonlat_of(100, 500)
     with pytest.raises(RasterError) as e:
-        extract_chip(src, storage / "e.png", lon, lat, 256)
+        extract_chip(edge, storage / "e.png", lon, lat, 256)
     assert e.value.code == "chip_mostly_empty"
     assert not (storage / "e.png").exists()
+    small = storage / "small.jp2"
+    make_tci(small, w=100, h=80)
+    lon, lat = lonlat_of(50, 40)
+    with pytest.raises(RasterError) as e2:
+        extract_chip(small, storage / "s.png", lon, lat, 512)
+    assert e2.value.code == "chip_mostly_empty"
 
 
 def test_non_rgb_and_missing_files_are_rejected(storage):
