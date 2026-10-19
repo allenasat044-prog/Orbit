@@ -20,6 +20,7 @@ type Item = {
 };
 type Point = { lat: number; lon: number };
 type Chip = { id: string; image_url: string; width_px: number; height_px: number; pin_px: { x: number; y: number }; gsd_m: number | null; label: string };
+type Caption = { text: string; checkpoint: string; device: string | null; latencyMs: number | null };
 type Zoom = { px: number; name: string; km: string };
 
 const ZOOMS: Zoom[] = [
@@ -61,6 +62,8 @@ export default function Explore() {
   const [chipBusy, setChipBusy] = useState<string | null>(null);
   const [zoomPx, setZoomPx] = useState(256);
   const [smooth, setSmooth] = useState(true);
+  const [caption, setCaption] = useState<Caption | null>(null);
+  const [captionBusy, setCaptionBusy] = useState(false);
 
   useEffect(() => {
     const v = new Viewer(el.current!, {
@@ -110,7 +113,7 @@ export default function Explore() {
     v.camera.flyTo({ destination: Rectangle.fromDegrees(w - padX, s - padY, e + padX, n + padY) });
   };
 
-  const closeChip = () => { clearOverlay(); setChip(null); };
+  const closeChip = () => { clearOverlay(); setChip(null); setCaption(null); };
 
   const draw = async (list: Item[]) => {
     const v = viewer.current;
@@ -137,7 +140,7 @@ export default function Explore() {
       setCredit([data.attribution?.imagery, data.attribution?.geocoding].filter(Boolean).join(" · "));
       await draw(all);
       const pt: Point | null = data.point ?? (append ? point : null);
-      if (!append) { setPoint(pt); clearOverlay(); setChip(null); }
+      if (!append) { setPoint(pt); clearOverlay(); setChip(null); setCaption(null); }
       if (!append && pt) placePin(pt, pinLabel ?? data.place?.name ?? `${pt.lat.toFixed(4)}, ${pt.lon.toFixed(4)}`, true);
       const where = pt ? ` at ${pt.lat.toFixed(4)}, ${pt.lon.toFixed(4)}` : "";
       if (!all.length) setMsg(`No scene covers this exact point in the last 30 days with cloud cover up to 30%.`);
@@ -204,6 +207,7 @@ export default function Explore() {
       const cd = await cr.json().catch(() => ({}));
       if (!cr.ok) { setMsg(cd?.error?.message ?? "Could not load the preview."); return; }
       const c = cd.chip;
+      setCaption(null);
       setChip({ id: c.id, image_url: c.image_url, width_px: c.width_px, height_px: c.height_px, pin_px: c.pin_px, gsd_m: c.gsd_m, label: `${new Date(item.acquired_at).toISOString().slice(0, 10)} · ${item.platform ?? item.collection}` });
       const ring: number[][] = c.bounds.coordinates[0];
       await showOverlay(c.image_url, ring[0][0], ring[2][1], ring[2][0], ring[0][1]);
@@ -212,6 +216,42 @@ export default function Explore() {
       setMsg("Can't reach the server. Is the backend running on port 3000?");
     } finally {
       setChipBusy(null);
+    }
+  };
+
+  const describeChip = async () => {
+    const token = getToken();
+    if (!chip) return;
+    if (!token) { setMsg("Log in to describe imagery."); return; }
+    setCaptionBusy(true);
+    setMsg("Describing the image. The first time loads the model, which can take a minute…");
+    try {
+      const res = await fetch("/api/captions", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ chip_id: chip.id }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setMsg(data?.error?.message ?? `Could not describe the image (${res.status})`); return; }
+      let captionId: string | undefined = data.caption?.id;
+      if (!captionId) {
+        const jobId = data.job.id as string;
+        for (let i = 0; i < 200 && !captionId; i++) {
+          await sleep(1500);
+          const jr = await fetch(`/api/jobs/${jobId}`, { headers: { Authorization: `Bearer ${token}` } });
+          const jd = await jr.json().catch(() => ({}));
+          if (!jr.ok) { setMsg(jd?.error?.message ?? `Could not check the caption job (${jr.status})`); return; }
+          if (jd.job.status === "failed") { setMsg(jd.job.error?.message ?? "Captioning failed."); return; }
+          if (jd.job.status === "succeeded") captionId = jd.job.result.caption_id as string;
+        }
+        if (!captionId) { setMsg("The caption is taking too long. Try again in a moment."); return; }
+      }
+      const cr = await fetch(`/api/captions/${captionId}`);
+      const cd = await cr.json().catch(() => ({}));
+      if (!cr.ok) { setMsg(cd?.error?.message ?? "Could not load the caption."); return; }
+      const c = cd.caption;
+      setCaption({ text: c.caption, checkpoint: c.model.checkpoint, device: c.model.device, latencyMs: c.latency_ms });
+      setMsg("Caption ready.");
+    } catch {
+      setMsg("Can't reach the server. Is the backend running on port 3000?");
+    } finally {
+      setCaptionBusy(false);
     }
   };
 
@@ -276,6 +316,7 @@ export default function Explore() {
           <div className="flex items-center justify-between text-sm">
             <span>{chip.label} · {chip.width_px}×{chip.height_px} px{chip.gsd_m ? ` · ${chip.gsd_m} m/px` : ""}</span>
             <span className="flex items-center gap-3">
+              <button type="button" disabled={captionBusy} onClick={() => void describeChip()} className="text-xs text-[#8daaff] disabled:text-muted-foreground">{captionBusy ? "Describing…" : "Describe this image"}</button>
               <button type="button" onClick={() => setSmooth((v) => !v)} className="text-xs text-[#8daaff]">{smooth ? "Show pixels" : "Smooth"}</button>
               <button type="button" onClick={closeChip} className="text-xs text-muted-foreground hover:text-white">Close preview</button>
             </span>
@@ -287,6 +328,14 @@ export default function Explore() {
               style={{ left: `${(chip.pin_px.x / chip.width_px) * 100}%`, top: `${(chip.pin_px.y / chip.height_px) * 100}%` }}
             />
           </div>
+          {caption && (
+            <div className="space-y-1 rounded-lg border border-white/10 p-3 text-sm">
+              <p>{caption.text}</p>
+              <p className="text-xs text-muted-foreground">
+                AI-generated by {caption.checkpoint}{caption.device ? ` on ${caption.device}` : ""}{caption.latencyMs != null ? ` in ${(caption.latencyMs / 1000).toFixed(1)} s` : ""}. This is a general-purpose model, not trained on satellite imagery, so treat it as a rough description, not a measurement.
+              </p>
+            </div>
+          )}
           <p className="text-xs text-muted-foreground">
             North is up and the red ring is your pin. Each pixel covers about {chip.gsd_m ?? 10} × {chip.gsd_m ?? 10} m on the ground, which is the finest detail Sentinel-2 true colour has: roads, fields, water and large buildings show, but not individual houses or cars.
           </p>

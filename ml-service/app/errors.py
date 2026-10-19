@@ -4,3 +4,7 @@ class UnsupportedTask(Exception):
 
 class ModelUnavailable(Exception):
     pass
+
+
+class ModelError(Exception):
+    pass

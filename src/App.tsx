@@ -4,6 +4,7 @@ import Dashboard from "@/components/ui/dashboard-4";
 import PageShell from "@/pages/PageShell";
 import Explore from "@/pages/Explore";
 import ComingSoon from "@/pages/ComingSoon";
+import Captions from "@/pages/Captions";
 import AuthPage from "@/pages/AuthPage";
 import ContactWithGlobe from "@/components/ui/contact-with-globe";
 
@@ -19,7 +20,7 @@ export default function App() {
         <Route path="/signup" element={<AuthPage mode="signup" />} />
         <Route path="/contact" element={<div className="dark"><ContactWithGlobe /></div>} />
         <Route path="/explore" element={page("Explore", <Explore />)} />
-        <Route path="/captions" element={page("Captions", <ComingSoon api="POST /api/captions, /api/captions/compare-models" />)} />
+        <Route path="/captions" element={page("Captions", <Captions />)} />
         <Route path="/analysis" element={page("Analysis", <ComingSoon api="POST /api/analysis/compare" />)} />
         <Route path="/updates" element={page("Updates", <ComingSoon api="GET /api/updates/status, /api/updates/history" />)} />
         <Route path="/dashboard" element={page("Dashboard", <Dashboard />)} />

@@ -9,12 +9,15 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.errors import ModelError, ModelUnavailable, UnsupportedTask
+from app.models.defaults import DEFAULT_CAPTION_MODEL, register_defaults
 from app.models.registry import registry
 from app.raster import RasterError, extract_chip, raster_support, safe_path
 
 VERSION = "0.1.0"
 
 app = FastAPI(title="Orbit ML Service", version=VERSION)
+register_defaults(registry)
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -69,3 +72,45 @@ async def raster_error(_: Request, exc: RasterError):
 @app.post("/raster/chip")
 def raster_chip(req: ChipRequest):
     return extract_chip(safe_path(req.path), safe_path(req.out_path), req.lon, req.lat, req.size_px)
+
+
+def _err(status: int, code: str, message: str) -> JSONResponse:
+    return JSONResponse(status_code=status, content={"error": {"code": code, "message": message}})
+
+
+@app.exception_handler(ModelUnavailable)
+async def model_unavailable(_: Request, exc: ModelUnavailable):
+    return _err(503, "model_unavailable", str(exc))
+
+
+@app.exception_handler(UnsupportedTask)
+async def unsupported_task(_: Request, exc: UnsupportedTask):
+    return _err(422, "unsupported_input", str(exc))
+
+
+@app.exception_handler(ModelError)
+async def model_error(_: Request, exc: ModelError):
+    return _err(500, "model_error", str(exc))
+
+
+class CaptionRequest(BaseModel):
+    image_path: str
+    model_id: str | None = None
+    prompt: str | None = Field(default=None, max_length=1000)
+
+
+@app.post("/caption")
+def caption(req: CaptionRequest):
+    model_id = req.model_id or DEFAULT_CAPTION_MODEL
+    adapter = registry.get(model_id)
+    if adapter is None:
+        return _err(404, "unknown_model", f"Unknown model: {model_id}")
+    if "caption" not in adapter.info().tasks:
+        return _err(422, "unsupported_task", f"{model_id} does not support captioning.")
+    ok, reason = adapter.check_availability()
+    if not ok:
+        return _err(503, "model_unavailable", reason or "Model is not available.")
+    path = safe_path(req.image_path)
+    if not path.exists():
+        return _err(404, "image_not_found", "Image file does not exist.")
+    return adapter.caption(str(path), prompt=req.prompt)

@@ -29,11 +29,12 @@ def test_health_reports_service_state():
     body = r.json()
     assert body["status"] == "ok"
     assert body["service"] == "orbit-ml"
-    assert body["models_registered"] == 0
+    assert body["models_registered"] >= 2
 
 
-def test_models_list_is_empty_until_adapters_are_registered():
-    assert client.get("/models").json() == {"items": []}
+def test_models_list_contains_the_registered_defaults():
+    ids = {m["id"] for m in client.get("/models").json()["items"]}
+    assert {"smolvlm-instruct", "rs-llava-7b"} <= ids
 
 
 def test_unknown_model_returns_structured_404():

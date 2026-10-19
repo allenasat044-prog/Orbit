@@ -15,6 +15,9 @@ class ModelRegistry:
             raise ValueError(f"Model already registered: {model_id}")
         self._adapters[model_id] = adapter
 
+    def unregister(self, model_id: str) -> None:
+        self._adapters.pop(model_id, None)
+
     def get(self, model_id: str) -> ModelAdapter | None:
         return self._adapters.get(model_id)
 

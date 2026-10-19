@@ -14,7 +14,10 @@ import { createJobRunner } from "./jobs/runner.js";
 import { createAssetsRepo, createChipsRepo } from "./imagery/chipRepo.js";
 import { createChipHandler } from "./imagery/chipJob.js";
 import { createChipRouter } from "./imagery/chipRoutes.js";
-import { mlChip } from "./mlClient.js";
+import { mlChip, mlCaption, mlModels, mlModel } from "./mlClient.js";
+import { createCaptionsRepo } from "./captions/repo.js";
+import { createCaptionHandler } from "./captions/job.js";
+import { createCaptionRouter } from "./captions/routes.js";
 
 if (config.jwtSecret.length < 32) {
   console.error("JWT_SECRET is missing or shorter than 32 characters. Set it in server/.env");
@@ -28,11 +31,13 @@ const storage = createStorage(config.storageDir);
 const acquisitions = createAcquisitionsRepo(pool);
 const chips = createChipsRepo(pool);
 const jobs = createJobsRepo(pool);
+const captions = createCaptionsRepo(pool);
 const tokens = createTokenManager({ username: config.copernicusUsername, password: config.copernicusPassword, tokenUrl: config.copernicusTokenUrl });
 const runner = createJobRunner({
   repo: jobs,
   concurrency: config.jobConcurrency,
   handlers: {
+    generate_caption: createCaptionHandler({ chips, captions, mlCaption: (body) => mlCaption(config.mlServiceUrl, body) }),
     prepare_chip: createChipHandler({
       acquisitions, chips, tokens, storage,
       assets: createAssetsRepo(pool),
@@ -44,7 +49,10 @@ const runner = createJobRunner({
 });
 
 const app = createApp({
-  routers: [{ path: "/api", router: createChipRouter({ config, acquisitions, chips, jobs, runner, storage }) }],
+  routers: [
+    { path: "/api", router: createChipRouter({ config, acquisitions, chips, jobs, runner, storage }) },
+    { path: "/api", router: createCaptionRouter({ config, chips, captions, runner, ml: { models: () => mlModels(config.mlServiceUrl), model: (id) => mlModel(config.mlServiceUrl, id) } }) },
+  ],
   config,
   providers,
   users: createUsersRepo(pool),

@@ -4,18 +4,19 @@ export async function checkMl(baseUrl, timeoutMs) {
   return res.json();
 }
 
-export async function mlChip(baseUrl, body, timeoutMs = 120000) {
+export async function mlRequest(baseUrl, path, { method = "GET", body, timeoutMs = 120000 } = {}) {
   let res;
   try {
-    res = await fetch(`${baseUrl.replace(/\/$/, "")}/raster/chip`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+    res = await fetch(`${baseUrl.replace(/\/$/, "")}${path}`, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(timeoutMs),
     });
-  } catch {
-    const err = new Error("The ML service is unreachable. Is it running on port 8000?");
-    err.code = "ml_service_unavailable";
+  } catch (cause) {
+    const timedOut = cause?.name === "TimeoutError" || cause?.name === "AbortError";
+    const err = new Error(timedOut ? "The ML service took too long to respond." : "The ML service is unreachable. Is it running on port 8000?");
+    err.code = timedOut ? "ml_service_timeout" : "ml_service_unavailable";
     err.retryable = true;
     throw err;
   }
@@ -23,8 +24,14 @@ export async function mlChip(baseUrl, body, timeoutMs = 120000) {
   if (!res.ok) {
     const err = new Error(data?.error?.message ?? `ML service responded with ${res.status}`);
     err.code = data?.error?.code ?? "ml_service_error";
-    err.retryable = res.status >= 500;
+    err.status = res.status;
+    err.retryable = res.status >= 500 && err.code !== "model_unavailable" && err.code !== "model_error";
     throw err;
   }
   return data;
 }
+
+export const mlChip = (baseUrl, body, timeoutMs = 120000) => mlRequest(baseUrl, "/raster/chip", { method: "POST", body, timeoutMs });
+export const mlCaption = (baseUrl, body, timeoutMs = 300000) => mlRequest(baseUrl, "/caption", { method: "POST", body, timeoutMs });
+export const mlModels = (baseUrl, timeoutMs = 10000) => mlRequest(baseUrl, "/models", { timeoutMs });
+export const mlModel = (baseUrl, id, timeoutMs = 10000) => mlRequest(baseUrl, `/models/${encodeURIComponent(id)}`, { timeoutMs });
