@@ -9,7 +9,7 @@ export class JobError extends Error {
   }
 }
 
-export const CHIP_VERSION = "v2";
+export const CHIP_VERSION = "v3";
 export const chipKey = (lon, lat, size) => `${lon.toFixed(5)},${lat.toFixed(5)},${size},${CHIP_VERSION}`;
 
 const extFor = (type) => (/jp2|jpeg ?2000/i.test(type ?? "") ? ".jp2" : /tiff/i.test(type ?? "") ? ".tif" : ".dat");
@@ -44,13 +44,17 @@ export function createChipHandler({ acquisitions, assets, chips, tokens, storage
 
     const id = crypto.randomUUID();
     const outRel = `chips/${id}.png`;
-    const r = await mlChip({ path: asset.storage_path, out_path: outRel, lon, lat, size_px });
+    const displayRel = `chips/${id}.display.png`;
+    const r = await mlChip({ path: asset.storage_path, out_path: outRel, display_out_path: displayRel, lon, lat, size_px });
     const { chip, created } = await chips.insert({
       id, acquisition_id: acq.id, asset_id: asset.id, center_key: key, center_lon: lon, center_lat: lat, size_px,
       width_px: r.width_px, height_px: r.height_px, pin_x: r.pin_px.x, pin_y: r.pin_px.y, gsd_m: r.gsd_m, crs: r.crs,
       nodata_fraction: r.nodata_fraction, bounds: r.bounds, storage_path: outRel, sha256: r.sha256,
     });
-    if (!created) await storage.remove(outRel);
+    if (!created) {
+      await storage.remove(outRel);
+      await storage.remove(displayRel);
+    }
     return { chip_id: chip.id, reused: !created };
   };
 }

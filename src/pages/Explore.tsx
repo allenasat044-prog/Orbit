@@ -19,7 +19,7 @@ type Item = {
   id: string | null;
 };
 type Point = { lat: number; lon: number };
-type Chip = { id: string; image_url: string; width_px: number; height_px: number; pin_px: { x: number; y: number }; gsd_m: number | null; label: string };
+type Chip = { id: string; image_url: string; display_url: string; width_px: number; height_px: number; pin_px: { x: number; y: number }; gsd_m: number | null; label: string };
 type Caption = { text: string; checkpoint: string; device: string | null; latencyMs: number | null };
 type Zoom = { px: number; name: string; km: string };
 
@@ -208,9 +208,9 @@ export default function Explore() {
       if (!cr.ok) { setMsg(cd?.error?.message ?? "Could not load the preview."); return; }
       const c = cd.chip;
       setCaption(null);
-      setChip({ id: c.id, image_url: c.image_url, width_px: c.width_px, height_px: c.height_px, pin_px: c.pin_px, gsd_m: c.gsd_m, label: `${new Date(item.acquired_at).toISOString().slice(0, 10)} · ${item.platform ?? item.collection}` });
+      setChip({ id: c.id, image_url: c.image_url, display_url: c.display_url ?? c.image_url, width_px: c.width_px, height_px: c.height_px, pin_px: c.pin_px, gsd_m: c.gsd_m, label: `${new Date(item.acquired_at).toISOString().slice(0, 10)} · ${item.platform ?? item.collection}` });
       const ring: number[][] = c.bounds.coordinates[0];
-      await showOverlay(c.image_url, ring[0][0], ring[2][1], ring[2][0], ring[0][1]);
+      await showOverlay(c.display_url ?? c.image_url, ring[0][0], ring[2][1], ring[2][0], ring[0][1]);
       setMsg("Preview placed on the globe at your pin.");
     } catch {
       setMsg("Can't reach the server. Is the backend running on port 3000?");
@@ -322,7 +322,7 @@ export default function Explore() {
             </span>
           </div>
           <div className="relative inline-block w-full max-w-[512px]">
-            <img src={chip.image_url} alt="Satellite preview at the pin" width={chip.width_px} height={chip.height_px} className="block w-full max-w-[512px] rounded-lg" style={{ imageRendering: smooth ? "auto" : "pixelated" }} />
+            <img src={smooth ? chip.display_url : chip.image_url} alt="Satellite preview at the pin" width={chip.width_px} height={chip.height_px} className="block w-full max-w-[512px] rounded-lg" style={{ imageRendering: smooth ? "auto" : "pixelated" }} />
             <span
               className="pointer-events-none absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-red-500"
               style={{ left: `${(chip.pin_px.x / chip.width_px) * 100}%`, top: `${(chip.pin_px.y / chip.height_px) * 100}%` }}

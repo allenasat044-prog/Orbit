@@ -7,7 +7,7 @@ from rasterio.transform import from_origin
 from rasterio.warp import transform
 
 from app.main import app
-from app.raster import RasterError, extract_chip, meters_per_degree, raster_support
+from app.raster import RasterError, extract_chip, make_display, meters_per_degree, raster_support
 
 client = TestClient(app)
 CRS = "EPSG:32650"
@@ -161,3 +161,54 @@ def test_api_chips_a_file_inside_storage_and_blocks_path_traversal(storage):
 def test_health_reports_raster_support():
     body = client.get("/health").json()
     assert body["raster"]["jp2"] is True
+
+
+def _lapvar(im):
+    g = np.asarray(im.convert("L"), np.float32)
+    lap = g[1:-1, 1:-1] * 4 - g[:-2, 1:-1] - g[2:, 1:-1] - g[1:-1, :-2] - g[1:-1, 2:]
+    return float(lap.var())
+
+
+def test_display_image_is_about_1024px_keeps_the_pin_centred_and_is_crisper_than_plain_bilinear(storage):
+    src = storage / "scene.jp2"
+    data = np.full((3, 1000, 1200), 60, np.uint8)
+    data[:, 480:520, 580:620] = 220
+    data[:, 505:515, :] = 130
+    with rasterio.open(src, "w", driver="JP2OpenJPEG", width=1200, height=1000, count=3, dtype="uint8", crs=CRS, transform=from_origin(X0, Y0, RES, RES), QUALITY="100", REVERSIBLE="YES") as dst:
+        dst.write(data)
+    lon, lat = lonlat_of(600, 500)
+    r = extract_chip(src, storage / "c.png", lon, lat, 128, storage / "c.display.png")
+    assert r["display"] == {"width_px": 1024, "height_px": 1024, "scale": 8}
+    native = Image.open(storage / "c.png")
+    big = Image.open(storage / "c.display.png")
+    assert native.size == (128, 128) and big.size == (1024, 1024) and big.mode == "RGB"
+    arr = np.array(big)[:, :, 0]
+    ys, xs = np.where(arr > 200)
+    assert abs(xs.mean() - 512) < 40 and abs(ys.mean() - 512) < 40
+    assert _lapvar(big) > 1.3 * _lapvar(native.resize((1024, 1024), Image.BILINEAR))
+    assert np.array(big).min() >= 0 and np.array(big).max() <= 255
+
+
+def test_display_scale_depends_on_chip_size_and_is_optional(storage):
+    src = storage / "scene.jp2"
+    make_tci(src)
+    lon, lat = lonlat_of(600, 500)
+    r256 = extract_chip(src, storage / "a.png", lon, lat, 256, storage / "a.display.png")
+    r512 = extract_chip(src, storage / "b.png", lon, lat, 512, storage / "b.display.png")
+    none = extract_chip(src, storage / "n.png", lon, lat, 128)
+    assert (r256["display"]["scale"], r256["display"]["width_px"]) == (4, 1024)
+    assert (r512["display"]["scale"], r512["display"]["width_px"]) == (2, 1024)
+    assert none["display"] is None
+    img, scale = make_display(Image.new("RGB", (1500, 1500)))
+    assert scale == 1 and img.size == (1500, 1500)
+
+
+def test_api_writes_the_display_image_and_blocks_paths_outside_storage(storage):
+    make_tci(storage / "scene.jp2")
+    lon, lat = lonlat_of(600, 500)
+    body = {"path": "scene.jp2", "out_path": "chips/x.png", "display_out_path": "chips/x.display.png", "lon": lon, "lat": lat, "size_px": 128}
+    ok = client.post("/raster/chip", json=body)
+    assert ok.status_code == 200 and ok.json()["display"]["width_px"] == 1024
+    assert (storage / "chips" / "x.display.png").exists()
+    bad = client.post("/raster/chip", json={**body, "display_out_path": "../../tmp/evil.png"})
+    assert bad.status_code == 400 and bad.json()["error"]["code"] == "invalid_path"

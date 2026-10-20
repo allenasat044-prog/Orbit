@@ -200,7 +200,7 @@ const ACQ = "11111111-1111-4111-8111-111111111111";
 function handlerKit(over = {}) {
   const storage = createStorage(tmp());
   const acq = { id: ACQ, visual_asset_key: "TCI_10m", assets: { TCI_10m: { https_href: "https://download.dataspace.copernicus.eu/x", type: "image/jp2" } }, ...over.acq };
-  const state = { assets: new Map(), chips: new Map(), downloads: 0, ml: 0, invalidated: 0 };
+  const state = { assets: new Map(), chips: new Map(), downloads: 0, ml: 0, invalidated: 0, mlBodies: [] };
   const deps = {
     storage,
     acquisitions: { findById: async (id) => (id === ACQ ? acq : null) },
@@ -220,7 +220,7 @@ function handlerKit(over = {}) {
     },
     tokens: { getToken: async () => "tok", invalidate: () => state.invalidated++ },
     download: over.download ?? (async ({ destPath }) => { state.downloads++; fs.writeFileSync(destPath, "jp2"); return { sha256: "abc", size: 3, contentType: "image/jp2" }; }),
-    mlChip: over.mlChip ?? (async ({ out_path }) => { state.ml++; fs.mkdirSync(path.dirname(storage.resolve(out_path)), { recursive: true }); fs.writeFileSync(storage.resolve(out_path), "png"); return { width_px: 512, height_px: 512, pin_px: { x: 256, y: 256 }, gsd_m: 10, crs: "EPSG:32650", nodata_fraction: 0, bounds: { type: "Polygon", coordinates: [] }, sha256: "def" }; }),
+    mlChip: over.mlChip ?? (async (body) => { const { out_path } = body; state.mlBodies.push(body); state.ml++; fs.mkdirSync(path.dirname(storage.resolve(out_path)), { recursive: true }); fs.writeFileSync(storage.resolve(out_path), "png"); return { width_px: 512, height_px: 512, pin_px: { x: 256, y: 256 }, gsd_m: 10, crs: "EPSG:32650", nodata_fraction: 0, bounds: { type: "Polygon", coordinates: [] }, sha256: "def" }; }),
     limits: { maxBytes: 1e6, allowedHosts: ["dataspace.copernicus.eu"], timeoutMs: 1000 },
   };
   return { handler: createChipHandler(deps), state, storage };
@@ -237,7 +237,7 @@ test("chip job downloads the asset once, reuses it for new pins, and reuses iden
   assert.equal(c.chip_id, a.chip_id);
   assert.equal(c.reused, true);
   assert.notEqual(a.chip_id, b.chip_id);
-  assert.equal(chipKey(114.9, 67.4, 512), "114.90000,67.40000,512,v2");
+  assert.equal(chipKey(114.9, 67.4, 512), "114.90000,67.40000,512,v3");
 });
 
 test("chip job fails clearly without a visual asset, a download URL, or a scene", async () => {
@@ -359,4 +359,33 @@ test("chip metadata and image are served, and missing files give a clean 404", a
   assert.deepEqual(bytes, png);
   assert.equal(gone.status, 404);
   assert.equal(unknown.status, 404);
+});
+
+test("chip job asks the ML service for a display image next to the native chip, and cleans both up after a lost race", async () => {
+  const { handler, state } = handlerKit();
+  await handler(P);
+  const body = state.mlBodies[0];
+  assert.match(body.out_path, /^chips\/[0-9a-f-]+\.png$/);
+  assert.equal(body.display_out_path, body.out_path.replace(/\.png$/, ".display.png"));
+  assert.equal(chipKey(114.9, 67.4, 512).endsWith(",v3"), true);
+});
+
+test("the image route serves the sharper display version on request and falls back to the original when it is missing", async () => {
+  const s = routeKit();
+  const id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  s.chipsMap.set("k", { id, acquisition_id: ACQ, center_lat: 1, center_lon: 2, size_px: 128, width_px: 128, height_px: 128, pin_x: 64, pin_y: 64, bounds: FOOTPRINT, storage_path: `chips/${id}.png` });
+  fs.mkdirSync(path.join(s.storage.root, "chips"), { recursive: true });
+  fs.writeFileSync(s.storage.resolve(`chips/${id}.png`), "NATIVE");
+  const get = async (q = "") => { const r = await fetch(`${s.base}/api/chips/${id}/image${q}`); return [r.status, await r.text()]; };
+  const meta = await (await fetch(`${s.base}/api/chips/${id}`)).json();
+  const before = await get("?variant=display");
+  fs.writeFileSync(s.storage.resolve(`chips/${id}.display.png`), "DISPLAY");
+  const display = await get("?variant=display");
+  const native = await get();
+  s.close();
+  assert.equal(meta.chip.display_url, `/api/chips/${id}/image?variant=display`);
+  assert.equal(meta.chip.image_url, `/api/chips/${id}/image`);
+  assert.deepEqual(before, [200, "NATIVE"]);
+  assert.deepEqual(display, [200, "DISPLAY"]);
+  assert.deepEqual(native, [200, "NATIVE"]);
 });

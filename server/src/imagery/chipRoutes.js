@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import express from "express";
 import { z } from "zod";
 import { HttpError, asyncHandler } from "../errors.js";
@@ -28,6 +29,7 @@ export const publicChip = (c) => ({
   sha256: c.sha256,
   created_at: c.created_at,
   image_url: `/api/chips/${c.id}/image`,
+  display_url: `/api/chips/${c.id}/image?variant=display`,
 });
 
 export const publicJob = (j) => ({
@@ -97,7 +99,10 @@ export function createChipRouter({ config, acquisitions, chips, jobs, runner, st
       const chip = await chips.findById(req.params.id);
       if (!chip) throw new HttpError(404, "not_found", "Chip not found.");
       res.set({ "Content-Type": "image/png", "Cache-Control": "public, max-age=31536000, immutable", "Cross-Origin-Resource-Policy": "cross-origin" });
-      res.sendFile(storage.resolve(chip.storage_path), (err) => {
+      const native = storage.resolve(chip.storage_path);
+      const display = native.replace(/\.png$/, ".display.png");
+      const file = req.query.variant === "display" && fs.existsSync(display) ? display : native;
+      res.sendFile(file, (err) => {
         if (err && !res.headersSent) res.status(404).json({ error: { code: "image_missing", message: "Chip image file is missing." } });
       });
     }),

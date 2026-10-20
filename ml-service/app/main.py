@@ -59,6 +59,7 @@ def get_model(model_id: str):
 class ChipRequest(BaseModel):
     path: str
     out_path: str
+    display_out_path: str | None = None
     lon: float = Field(ge=-180, le=180)
     lat: float = Field(ge=-90, le=90)
     size_px: int = Field(default=512, ge=64, le=2048)
@@ -71,7 +72,8 @@ async def raster_error(_: Request, exc: RasterError):
 
 @app.post("/raster/chip")
 def raster_chip(req: ChipRequest):
-    return extract_chip(safe_path(req.path), safe_path(req.out_path), req.lon, req.lat, req.size_px)
+    display = safe_path(req.display_out_path) if req.display_out_path else None
+    return extract_chip(safe_path(req.path), safe_path(req.out_path), req.lon, req.lat, req.size_px, display)
 
 
 def _err(status: int, code: str, message: str) -> JSONResponse:

@@ -8,12 +8,13 @@ from pathlib import Path
 
 import numpy as np
 import rasterio
-from PIL import Image
+from PIL import Image, ImageFilter
 from rasterio.transform import from_origin
 from rasterio.warp import Resampling, reproject, transform
 from rasterio.windows import Window
 
 MAX_NODATA_FRACTION = 0.5
+DISPLAY_TARGET_PX = 1024
 
 
 class RasterError(Exception):
@@ -51,7 +52,28 @@ def meters_per_degree(lat: float) -> tuple[float, float]:
     return per_lat, per_lon
 
 
-def extract_chip(src_path: Path, out_path: Path, lon: float, lat: float, size_px: int) -> dict:
+def make_display(img: Image.Image) -> tuple[Image.Image, int]:
+    """Smoothly enlarge a chip for viewing. This sharpens how it looks; it adds no real detail."""
+    scale = max(1, round(DISPLAY_TARGET_PX / max(img.size)))
+    if scale == 1:
+        return img, 1
+    big = img.resize((img.width * scale, img.height * scale), Image.LANCZOS)
+    return big.filter(ImageFilter.UnsharpMask(radius=scale * 0.6, percent=70, threshold=1)), scale
+
+
+def save_png_atomic(img: Image.Image, out_path: Path) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=out_path.parent, suffix=".png.tmp")
+    os.close(fd)
+    try:
+        img.save(tmp, "PNG")
+        os.replace(tmp, out_path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+
+
+def extract_chip(src_path: Path, out_path: Path, lon: float, lat: float, size_px: int, display_out_path: Path | None = None) -> dict:
     """Cut a north-up image centred exactly on (lon, lat), resampled from the scene's own grid."""
     if not src_path.exists():
         raise RasterError("raster_not_found", "Source raster does not exist.", 404)
@@ -96,7 +118,7 @@ def extract_chip(src_path: Path, out_path: Path, lon: float, lat: float, size_px
 
     dest = np.zeros((3, size_px, size_px), np.uint8)
     for b in range(3):
-        reproject(source=data[b], destination=dest[b], src_transform=src_transform, src_crs=src_crs, dst_transform=dst_transform, dst_crs="EPSG:4326", resampling=Resampling.bilinear)
+        reproject(source=data[b], destination=dest[b], src_transform=src_transform, src_crs=src_crs, dst_transform=dst_transform, dst_crs="EPSG:4326", resampling=Resampling.cubic)
 
     valid = np.zeros((size_px, size_px), np.uint8)
     reproject(source=(data.max(axis=0) > 0).astype(np.uint8), destination=valid, src_transform=src_transform, src_crs=src_crs, dst_transform=dst_transform, dst_crs="EPSG:4326", resampling=Resampling.nearest)
@@ -107,15 +129,12 @@ def extract_chip(src_path: Path, out_path: Path, lon: float, lat: float, size_px
         raise RasterError("chip_mostly_empty", f"{nodata_fraction:.0%} of this area has no data (scene edge).")
 
     img = Image.fromarray(np.transpose(dest, (1, 2, 0)), "RGB")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=out_path.parent, suffix=".png.tmp")
-    os.close(fd)
-    try:
-        img.save(tmp, "PNG")
-        os.replace(tmp, out_path)
-    finally:
-        if os.path.exists(tmp):
-            os.remove(tmp)
+    save_png_atomic(img, out_path)
+    display = None
+    if display_out_path is not None:
+        big, scale = make_display(img)
+        save_png_atomic(big, display_out_path)
+        display = {"width_px": big.width, "height_px": big.height, "scale": scale}
 
     return {
         "width_px": int(size_px),
@@ -126,4 +145,5 @@ def extract_chip(src_path: Path, out_path: Path, lon: float, lat: float, size_px
         "nodata_fraction": nodata_fraction,
         "bounds": {"type": "Polygon", "coordinates": [[[west, north], [east, north], [east, south], [west, south], [west, north]]]},
         "sha256": hashlib.sha256(out_path.read_bytes()).hexdigest(),
+        "display": display,
     }
