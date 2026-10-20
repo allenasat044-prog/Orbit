@@ -18,6 +18,12 @@ import { mlChip, mlCaption, mlModels, mlModel } from "./mlClient.js";
 import { createCaptionsRepo } from "./captions/repo.js";
 import { createCaptionHandler } from "./captions/job.js";
 import { createCaptionRouter } from "./captions/routes.js";
+import { createRegionsRepo } from "./regions/repo.js";
+import { createRegionRouter } from "./regions/routes.js";
+import { createUpdateRunsRepo } from "./updates/repo.js";
+import { createUpdateEngine } from "./updates/engine.js";
+import { createSceneProcessor } from "./updates/process.js";
+import { createUpdateRouter } from "./updates/routes.js";
 
 if (config.jwtSecret.length < 32) {
   console.error("JWT_SECRET is missing or shorter than 32 characters. Set it in server/.env");
@@ -33,24 +39,35 @@ const chips = createChipsRepo(pool);
 const jobs = createJobsRepo(pool);
 const captions = createCaptionsRepo(pool);
 const tokens = createTokenManager({ username: config.copernicusUsername, password: config.copernicusPassword, tokenUrl: config.copernicusTokenUrl });
+const chipHandler = createChipHandler({
+  acquisitions, chips, tokens, storage,
+  assets: createAssetsRepo(pool),
+  download: downloadToFile,
+  mlChip: (body) => mlChip(config.mlServiceUrl, body),
+  limits: { maxBytes: config.maxDownloadBytes, allowedHosts: config.downloadAllowedHosts, timeoutMs: config.downloadTimeoutMs },
+});
+const captionHandler = createCaptionHandler({ chips, captions, mlCaption: (body) => mlCaption(config.mlServiceUrl, body) });
+const regions = createRegionsRepo(pool);
+const updateRuns = createUpdateRunsRepo(pool);
+const engine = createUpdateEngine({ regions, runs: updateRuns, acquisitions, providers, processScene: createSceneProcessor({ chipHandler, captionHandler }) });
 const runner = createJobRunner({
   repo: jobs,
   concurrency: config.jobConcurrency,
   handlers: {
-    generate_caption: createCaptionHandler({ chips, captions, mlCaption: (body) => mlCaption(config.mlServiceUrl, body) }),
-    prepare_chip: createChipHandler({
-      acquisitions, chips, tokens, storage,
-      assets: createAssetsRepo(pool),
-      download: downloadToFile,
-      mlChip: (body) => mlChip(config.mlServiceUrl, body),
-      limits: { maxBytes: config.maxDownloadBytes, allowedHosts: config.downloadAllowedHosts, timeoutMs: config.downloadTimeoutMs },
-    }),
+    prepare_chip: chipHandler,
+    generate_caption: captionHandler,
+    update_run: async ({ run_id, user_id, role }) => {
+      const run = await engine.execute(run_id, { userId: user_id, role });
+      return { run_id, status: run.status };
+    },
   },
 });
 
 const app = createApp({
   routers: [
     { path: "/api", router: createChipRouter({ config, acquisitions, chips, jobs, runner, storage }) },
+    { path: "/api", router: createRegionRouter({ config, regions }) },
+    { path: "/api", router: createUpdateRouter({ config, runs: updateRuns, runner }) },
     { path: "/api", router: createCaptionRouter({ config, chips, captions, runner, ml: { models: () => mlModels(config.mlServiceUrl), model: (id) => mlModel(config.mlServiceUrl, id) } }) },
   ],
   config,
@@ -66,7 +83,9 @@ const app = createApp({
 
 const server = app.listen(config.port, () => {
   console.log(`orbit-server listening on http://localhost:${config.port}`);
-  runner.recover().catch((err) => console.error("job recovery failed:", err.message));
+  updateRuns.recoverInterrupted()
+    .then(() => runner.recover())
+    .catch((err) => console.error("job recovery failed:", err.message));
 });
 
 async function shutdown() {

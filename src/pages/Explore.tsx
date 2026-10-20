@@ -64,6 +64,10 @@ export default function Explore() {
   const [smooth, setSmooth] = useState(true);
   const [caption, setCaption] = useState<Caption | null>(null);
   const [captionBusy, setCaptionBusy] = useState(false);
+  const [pinName, setPinName] = useState("");
+  const [autoCaption, setAutoCaption] = useState(false);
+  const [monitorBusy, setMonitorBusy] = useState(false);
+  const [runBusy, setRunBusy] = useState(false);
 
   useEffect(() => {
     const v = new Viewer(el.current!, {
@@ -141,7 +145,8 @@ export default function Explore() {
       await draw(all);
       const pt: Point | null = data.point ?? (append ? point : null);
       if (!append) { setPoint(pt); clearOverlay(); setChip(null); setCaption(null); }
-      if (!append && pt) placePin(pt, pinLabel ?? data.place?.name ?? `${pt.lat.toFixed(4)}, ${pt.lon.toFixed(4)}`, true);
+      const label = pinLabel ?? data.place?.name ?? (pt ? `${pt.lat.toFixed(4)}, ${pt.lon.toFixed(4)}` : "");
+      if (!append && pt) { setPinName(label); placePin(pt, label, true); }
       const where = pt ? ` at ${pt.lat.toFixed(4)}, ${pt.lon.toFixed(4)}` : "";
       if (!all.length) setMsg(`No scene covers this exact point in the last 30 days with cloud cover up to 30%.`);
       else setMsg(`${all.length} scene${all.length === 1 ? "" : "s"} cover this point${where}${data.next_cursor ? " (more available)" : ""}`);
@@ -255,6 +260,57 @@ export default function Explore() {
     }
   };
 
+  const monitorHere = async () => {
+    const token = getToken();
+    if (!point) { setMsg("Drop a pin first: search a place or click the globe."); return; }
+    if (!token) { setMsg("Log in to monitor locations."); return; }
+    setMonitorBusy(true);
+    try {
+      const res = await fetch("/api/regions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: (pinName || `${point.lat.toFixed(4)}, ${point.lon.toFixed(4)}`).slice(0, 80), lat: point.lat, lon: point.lon, auto_caption: autoCaption }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setMsg(data?.error?.message ?? `Could not monitor this location (${res.status})`); return; }
+      setMsg(`Monitoring "${data.region.name}". Press "Check for new scenes now" to run an update.`);
+    } catch {
+      setMsg("Can't reach the server. Is the backend running on port 3000?");
+    } finally {
+      setMonitorBusy(false);
+    }
+  };
+
+  const runUpdate = async () => {
+    const token = getToken();
+    if (!token) { setMsg("Log in to run updates."); return; }
+    setRunBusy(true);
+    setMsg("Checking your monitored locations for new scenes…");
+    try {
+      const res = await fetch("/api/updates/run", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setMsg(data?.error?.message ?? `Could not start the update (${res.status})`); return; }
+      const runId = data.run.id as string;
+      for (let i = 0; i < 300; i++) {
+        await sleep(2000);
+        const rr = await fetch(`/api/updates/runs/${runId}`, { headers: { Authorization: `Bearer ${token}` } });
+        const rd = await rr.json().catch(() => ({}));
+        if (!rr.ok) { setMsg(rd?.error?.message ?? `Could not check the update (${rr.status})`); return; }
+        const run = rd.run;
+        if (run.status === "running") continue;
+        const firstError = run.summary?.regions?.flatMap((r: { errors: { message: string }[] }) => r.errors)?.[0]?.message ?? run.summary?.error;
+        if (run.status === "failed") { setMsg(`Update failed${firstError ? `: ${firstError}` : "."}`); return; }
+        setMsg(run.summary?.note ?? `Update finished: ${run.new_acquisitions} new scene${run.new_acquisitions === 1 ? "" : "s"}, ${run.captions_created} caption${run.captions_created === 1 ? "" : "s"}, ${run.failed_tasks} problem${run.failed_tasks === 1 ? "" : "s"}. See the Dashboard.`);
+        return;
+      }
+      setMsg("The update is still running. Check the Dashboard in a few minutes.");
+    } catch {
+      setMsg("Can't reach the server. Is the backend running on port 3000?");
+    } finally {
+      setRunBusy(false);
+    }
+  };
+
   const register = async (item: Item) => {
     const token = getToken();
     if (!token) { setMsg("Log in to register imagery."); return; }
@@ -277,6 +333,20 @@ export default function Explore() {
     <div className="space-y-4">
       <div className="flex items-center gap-4"><SearchGroup onSearch={onSearch} /><span className="text-sm text-muted-foreground">{msg}</span></div>
       <div ref={el} className="h-[70vh] w-full overflow-hidden rounded-2xl border border-white/10" />
+      {point && (
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <button type="button" disabled={monitorBusy} onClick={() => void monitorHere()} className="rounded-md border border-white/10 px-2 py-1 text-xs text-[#8daaff] disabled:text-muted-foreground">
+            {monitorBusy ? "Saving…" : "Monitor this location"}
+          </button>
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <input type="checkbox" checked={autoCaption} onChange={(e) => setAutoCaption(e.target.checked)} />
+            also describe new scenes
+          </label>
+          <button type="button" disabled={runBusy} onClick={() => void runUpdate()} className="rounded-md border border-white/10 px-2 py-1 text-xs text-[#8daaff] disabled:text-muted-foreground">
+            {runBusy ? "Checking…" : "Check for new scenes now"}
+          </button>
+        </div>
+      )}
       {items.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-muted-foreground">Preview area around the pin:</span>
