@@ -8,6 +8,7 @@ from PIL import Image
 from app.errors import ModelError, ModelUnavailable, UnsupportedTask
 from app.main import app, registry
 from app.models.base import ModelAdapter, ModelInfo
+from app.models.candidates import earthgpt, skysensegpt, terrascope
 from app.models.rs_llava import RSLlavaAdapter
 from app.models.smolvlm import CHECKPOINT, DEFAULT_PROMPT, SmolVLMAdapter, dtype_kwarg, pick_dtype, resolve_model_class
 
@@ -241,3 +242,26 @@ def test_dtype_can_be_overridden_and_bad_values_are_explained(monkeypatch):
     monkeypatch.setenv("ORBIT_DTYPE", "int4")
     with pytest.raises(ModelUnavailable, match="ORBIT_DTYPE"):
         pick_dtype(torch, "mps")
+
+
+def test_research_candidates_are_registered_with_their_verified_facts_and_never_pretend_to_run(png):
+    for make, mid, needle in [(earthgpt, "earthgpt", "only a README"), (skysensegpt, "skysensegpt", "no public weights"), (terrascope, "terrascope-8b", "16 GB")]:
+        a = make()
+        ok, reason = a.check_availability()
+        assert ok is False and needle in reason
+        with pytest.raises(ModelUnavailable):
+            a.caption(str(png))
+        with pytest.raises(ModelUnavailable):
+            a.load()
+        info = a.info()
+        assert info.id == mid and info.resources["verified_on"] and info.resources["repo"].startswith("https://")
+
+
+def test_models_endpoint_lists_every_candidate_as_unavailable_with_a_reason():
+    items = {m["id"]: m for m in client.get("/models").json()["items"]}
+    for mid in ("rs-llava-7b", "earthgpt", "skysensegpt", "terrascope-8b"):
+        assert items[mid]["available"] is False and items[mid]["unavailable_reason"]
+    assert items["terrascope-8b"]["modalities"] == ["optical", "sar"]
+    assert "pixel-grounded-reasoning" in items["terrascope-8b"]["tasks"]
+    r = client.post("/caption", json={"model_id": "earthgpt", "image_path": "whatever.png"})
+    assert r.status_code == 422 or r.status_code == 503
