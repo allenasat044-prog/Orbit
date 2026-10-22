@@ -35,3 +35,5 @@ export const mlChip = (baseUrl, body, timeoutMs = 120000) => mlRequest(baseUrl, 
 export const mlCaption = (baseUrl, body, timeoutMs = 300000) => mlRequest(baseUrl, "/caption", { method: "POST", body, timeoutMs });
 export const mlModels = (baseUrl, timeoutMs = 10000) => mlRequest(baseUrl, "/models", { timeoutMs });
 export const mlModel = (baseUrl, id, timeoutMs = 10000) => mlRequest(baseUrl, `/models/${encodeURIComponent(id)}`, { timeoutMs });
+export const mlClassify = (baseUrl, body, timeoutMs = 120000) => mlRequest(baseUrl, "/classify", { method: "POST", body, timeoutMs });
+export const mlScore = (baseUrl, body, timeoutMs = 120000) => mlRequest(baseUrl, "/score", { method: "POST", body, timeoutMs });

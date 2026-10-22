@@ -2,3 +2,5 @@
 torch>=2.3
 transformers>=4.46
 num2words
+open_clip_torch>=2.24
+huggingface_hub

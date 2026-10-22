@@ -14,7 +14,10 @@ import { createJobRunner } from "./jobs/runner.js";
 import { createAssetsRepo, createChipsRepo } from "./imagery/chipRepo.js";
 import { createChipHandler } from "./imagery/chipJob.js";
 import { createChipRouter } from "./imagery/chipRoutes.js";
-import { mlChip, mlCaption, mlModels, mlModel } from "./mlClient.js";
+import { mlChip, mlCaption, mlModels, mlModel, mlClassify, mlScore } from "./mlClient.js";
+import { createComparisonsRepo } from "./comparisons/repo.js";
+import { createCompareHandler } from "./comparisons/job.js";
+import { createComparisonRouter } from "./comparisons/routes.js";
 import { createCaptionsRepo } from "./captions/repo.js";
 import { createCaptionHandler } from "./captions/job.js";
 import { createCaptionRouter } from "./captions/routes.js";
@@ -47,6 +50,7 @@ const chipHandler = createChipHandler({
   limits: { maxBytes: config.maxDownloadBytes, allowedHosts: config.downloadAllowedHosts, timeoutMs: config.downloadTimeoutMs },
 });
 const captionHandler = createCaptionHandler({ chips, captions, mlCaption: (body) => mlCaption(config.mlServiceUrl, body) });
+const comparisons = createComparisonsRepo(pool);
 const regions = createRegionsRepo(pool);
 const updateRuns = createUpdateRunsRepo(pool);
 const engine = createUpdateEngine({ regions, runs: updateRuns, acquisitions, providers, processScene: createSceneProcessor({ chipHandler, captionHandler }) });
@@ -56,6 +60,12 @@ const runner = createJobRunner({
   handlers: {
     prepare_chip: chipHandler,
     generate_caption: captionHandler,
+    compare_models: createCompareHandler({
+      chips, captions, captionHandler, comparisons,
+      listModels: () => mlModels(config.mlServiceUrl),
+      classify: (b) => mlClassify(config.mlServiceUrl, b),
+      score: (b) => mlScore(config.mlServiceUrl, b),
+    }),
     update_run: async ({ run_id, user_id, role }) => {
       const run = await engine.execute(run_id, { userId: user_id, role });
       return { run_id, status: run.status };
@@ -68,6 +78,7 @@ const app = createApp({
     { path: "/api", router: createChipRouter({ config, acquisitions, chips, jobs, runner, storage }) },
     { path: "/api", router: createRegionRouter({ config, regions }) },
     { path: "/api", router: createUpdateRouter({ config, runs: updateRuns, runner }) },
+    { path: "/api", router: createComparisonRouter({ config, chips, comparisons, runner }) },
     { path: "/api", router: createCaptionRouter({ config, chips, captions, runner, ml: { models: () => mlModels(config.mlServiceUrl), model: (id) => mlModel(config.mlServiceUrl, id) } }) },
   ],
   config,

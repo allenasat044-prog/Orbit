@@ -76,3 +76,16 @@ def terrascope() -> CandidateAdapter:
         reason="Not runnable yet: an 8B model needs about 16 GB for its weights in half precision, which does not fit in 16 GB of shared memory, and its custom dual-decoder code is not integrated. Inference requirements and the checkpoint licence still need to be read from the TerraScope folder of the repository.",
         resources={"repo": "https://github.com/shuyansy/Earth-Observation-VLMs", "project": "https://shuyansy.github.io/terrascope/", "paper": "https://arxiv.org/abs/2603.19039", "weights": "https://huggingface.co/sy1998/TerraScope", "benchmark": "sy1998/TerraScope-Bench", "approx_memory_gb": 16},
     )
+
+
+def mtrs_change_captioner() -> CandidateAdapter:
+    return CandidateAdapter(
+        model_id="mtrs-mvlt-lora-cc",
+        name="MVLT-LoRA-CC (MTRS change captioning)",
+        checkpoint="none found",
+        tasks=["change-caption"],
+        modalities=["optical-bitemporal"],
+        licence="Paper is open access under CC BY; no code or weights licence found",
+        reason="Not runnable: the paper (Lamar Leon et al., Remote Sensing 2026, 18, 166) describes a 24B Mistral-Small-3.1 model with LoRA trained on 3 A100 GPUs, and its text gives no code or weights link. It was trained on 0.5 m two-date image pairs (LEVIR-CC), not 10 m Sentinel-2.",
+        resources={"paper": "https://doi.org/10.3390/rs18010166", "base_model": "Mistral-Small-3.1-24B-Instruct-2503 (24.75B parameters, LoRA rank 128)", "dataset": "LEVIR-CC (10,077 pairs, 256x256 px, about 0.5 m per pixel)", "useful_for": "its evaluation protocol (separate change and no-change scoring) and its finding that general-purpose models do poorly at change captioning"},
+    )

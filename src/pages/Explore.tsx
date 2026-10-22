@@ -21,6 +21,13 @@ type Item = {
 type Point = { lat: number; lon: number };
 type Chip = { id: string; image_url: string; display_url: string; width_px: number; height_px: number; pin_px: { x: number; y: number }; gsd_m: number | null; label: string };
 type Caption = { text: string; checkpoint: string; device: string | null; latencyMs: number | null };
+type CompareResult = { model_id: string; name: string; text?: string; latency_ms?: number | null; alignment?: number | null; error?: { message: string } };
+type Comparison = {
+  results: CompareResult[];
+  scene_tags: { label: string; score: number }[] | null;
+  scene_error: { message: string } | null;
+  unavailable: { model_id: string; name: string; reason: string }[];
+};
 type Zoom = { px: number; name: string; km: string };
 
 const ZOOMS: Zoom[] = [
@@ -64,6 +71,8 @@ export default function Explore() {
   const [smooth, setSmooth] = useState(true);
   const [caption, setCaption] = useState<Caption | null>(null);
   const [captionBusy, setCaptionBusy] = useState(false);
+  const [comparison, setComparison] = useState<Comparison | null>(null);
+  const [compareBusy, setCompareBusy] = useState(false);
   const [pinName, setPinName] = useState("");
   const [autoCaption, setAutoCaption] = useState(false);
   const [monitorBusy, setMonitorBusy] = useState(false);
@@ -117,7 +126,7 @@ export default function Explore() {
     v.camera.flyTo({ destination: Rectangle.fromDegrees(w - padX, s - padY, e + padX, n + padY) });
   };
 
-  const closeChip = () => { clearOverlay(); setChip(null); setCaption(null); };
+  const closeChip = () => { clearOverlay(); setChip(null); setCaption(null); setComparison(null); };
 
   const draw = async (list: Item[]) => {
     const v = viewer.current;
@@ -144,7 +153,7 @@ export default function Explore() {
       setCredit([data.attribution?.imagery, data.attribution?.geocoding].filter(Boolean).join(" · "));
       await draw(all);
       const pt: Point | null = data.point ?? (append ? point : null);
-      if (!append) { setPoint(pt); clearOverlay(); setChip(null); setCaption(null); }
+      if (!append) { setPoint(pt); clearOverlay(); setChip(null); setCaption(null); setComparison(null); }
       const label = pinLabel ?? data.place?.name ?? (pt ? `${pt.lat.toFixed(4)}, ${pt.lon.toFixed(4)}` : "");
       if (!append && pt) { setPinName(label); placePin(pt, label, true); }
       const where = pt ? ` at ${pt.lat.toFixed(4)}, ${pt.lon.toFixed(4)}` : "";
@@ -213,6 +222,7 @@ export default function Explore() {
       if (!cr.ok) { setMsg(cd?.error?.message ?? "Could not load the preview."); return; }
       const c = cd.chip;
       setCaption(null);
+      setComparison(null);
       setChip({ id: c.id, image_url: c.image_url, display_url: c.display_url ?? c.image_url, width_px: c.width_px, height_px: c.height_px, pin_px: c.pin_px, gsd_m: c.gsd_m, label: `${new Date(item.acquired_at).toISOString().slice(0, 10)} · ${item.platform ?? item.collection}` });
       const ring: number[][] = c.bounds.coordinates[0];
       await showOverlay(c.display_url ?? c.image_url, ring[0][0], ring[2][1], ring[2][0], ring[0][1]);
@@ -257,6 +267,39 @@ export default function Explore() {
       setMsg("Can't reach the server. Is the backend running on port 3000?");
     } finally {
       setCaptionBusy(false);
+    }
+  };
+
+  const compareModels = async () => {
+    const token = getToken();
+    if (!chip) return;
+    if (!token) { setMsg("Log in to compare models."); return; }
+    setCompareBusy(true);
+    setMsg("Comparing models. The first time loads them, which can take a minute…");
+    try {
+      const res = await fetch("/api/captions/compare-models", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ chip_id: chip.id }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setMsg(data?.error?.message ?? `Could not start the comparison (${res.status})`); return; }
+      const jobId = data.job.id as string;
+      let comparisonId: string | undefined;
+      for (let i = 0; i < 240 && !comparisonId; i++) {
+        await sleep(1500);
+        const jr = await fetch(`/api/jobs/${jobId}`, { headers: { Authorization: `Bearer ${token}` } });
+        const jd = await jr.json().catch(() => ({}));
+        if (!jr.ok) { setMsg(jd?.error?.message ?? `Could not check the comparison job (${jr.status})`); return; }
+        if (jd.job.status === "failed") { setMsg(jd.job.error?.message ?? "The comparison failed."); return; }
+        if (jd.job.status === "succeeded") comparisonId = jd.job.result.comparison_id as string;
+      }
+      if (!comparisonId) { setMsg("The comparison is taking too long. Try again in a moment."); return; }
+      const cr = await fetch(`/api/comparisons/${comparisonId}`);
+      const cd = await cr.json().catch(() => ({}));
+      if (!cr.ok) { setMsg(cd?.error?.message ?? "Could not load the comparison."); return; }
+      setComparison(cd.comparison);
+      setMsg("Comparison ready.");
+    } catch {
+      setMsg("Can't reach the server. Is the backend running on port 3000?");
+    } finally {
+      setCompareBusy(false);
     }
   };
 
@@ -387,6 +430,7 @@ export default function Explore() {
             <span>{chip.label} · {chip.width_px}×{chip.height_px} px{chip.gsd_m ? ` · ${chip.gsd_m} m/px` : ""}</span>
             <span className="flex items-center gap-3">
               <button type="button" disabled={captionBusy} onClick={() => void describeChip()} className="text-xs text-[#8daaff] disabled:text-muted-foreground">{captionBusy ? "Describing…" : "Describe this image"}</button>
+              <button type="button" disabled={compareBusy} onClick={() => void compareModels()} className="text-xs text-[#8daaff] disabled:text-muted-foreground">{compareBusy ? "Comparing…" : "Compare models"}</button>
               <button type="button" onClick={() => setSmooth((v) => !v)} className="text-xs text-[#8daaff]">{smooth ? "Show pixels" : "Smooth"}</button>
               <button type="button" onClick={closeChip} className="text-xs text-muted-foreground hover:text-white">Close preview</button>
             </span>
@@ -404,6 +448,36 @@ export default function Explore() {
               <p className="text-xs text-muted-foreground">
                 AI-generated by {caption.checkpoint}{caption.device ? ` on ${caption.device}` : ""}{caption.latencyMs != null ? ` in ${(caption.latencyMs / 1000).toFixed(1)} s` : ""}. This is a general-purpose model, not trained on satellite imagery, so treat it as a rough description, not a measurement.
               </p>
+            </div>
+          )}
+          {comparison && (
+            <div className="space-y-2 rounded-lg border border-white/10 p-3 text-sm">
+              {comparison.scene_tags && (
+                <p>
+                  <span className="text-muted-foreground">Scene tags (GeoRSCLIP): </span>
+                  {comparison.scene_tags.map((t) => `${t.label} ${Math.round(t.score * 100)}%`).join(" · ")}
+                </p>
+              )}
+              {comparison.scene_error && <p className="text-xs text-muted-foreground">Scene tags unavailable: {comparison.scene_error.message}</p>}
+              <ul className="space-y-1">
+                {comparison.results.map((r) => (
+                  <li key={r.model_id}>
+                    <span className="font-medium">{r.name}: </span>
+                    {r.text ?? `failed (${r.error?.message ?? "unknown error"})`}
+                    {r.alignment != null && <span className="text-xs text-muted-foreground"> · image match {r.alignment.toFixed(2)}</span>}
+                  </li>
+                ))}
+              </ul>
+              {comparison.unavailable.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Not available on this machine:{" "}
+                  {comparison.unavailable.map((u, i) => (
+                    <span key={u.model_id} title={u.reason}>{u.name}{i < comparison.unavailable.length - 1 ? ", " : ""}</span>
+                  ))}
+                  . Hover a name for the reason.
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">AI-generated. Image match is a rough similarity between the image and each caption, not a measure of truth.</p>
             </div>
           )}
           <p className="text-xs text-muted-foreground">

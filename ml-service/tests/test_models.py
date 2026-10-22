@@ -8,7 +8,8 @@ from PIL import Image
 from app.errors import ModelError, ModelUnavailable, UnsupportedTask
 from app.main import app, registry
 from app.models.base import ModelAdapter, ModelInfo
-from app.models.candidates import earthgpt, skysensegpt, terrascope
+from app.models.candidates import earthgpt, mtrs_change_captioner, skysensegpt, terrascope
+from app.models.georsclip import DEFAULT_LABELS, GeoRSCLIPAdapter, PROMPT_TEMPLATE
 from app.models.rs_llava import RSLlavaAdapter
 from app.models.smolvlm import CHECKPOINT, DEFAULT_PROMPT, SmolVLMAdapter, dtype_kwarg, pick_dtype, resolve_model_class
 
@@ -265,3 +266,139 @@ def test_models_endpoint_lists_every_candidate_as_unavailable_with_a_reason():
     assert "pixel-grounded-reasoning" in items["terrascope-8b"]["tasks"]
     r = client.post("/caption", json={"model_id": "earthgpt", "image_path": "whatever.png"})
     assert r.status_code == 422 or r.status_code == 503
+
+
+# ---------- GeoRSCLIP ----------
+def clip_adapter(image_vec=(1.0, 0.0, 0.0)):
+    texts_seen = []
+
+    def encode_text(texts):
+        texts_seen.append(list(texts))
+        out = []
+        for t in texts:
+            if "forest" in t:
+                out.append([0.9, 0.1, 0.0])
+            elif "water body" in t:
+                out.append([0.0, 1.0, 0.0])
+            elif "green fields and a road" in t:
+                out.append([0.8, 0.2, 0.1])
+            else:
+                out.append([0.0, 0.1, 1.0])
+        return np.array(out, dtype=np.float32)
+
+    bundle = {"encode_image": lambda im: np.array([image_vec], dtype=np.float32), "encode_text": encode_text, "logit_scale": 100.0, "device": "cpu", "dtype": "float32", "load_info": {"missing_keys": 0, "unexpected_keys": 2}}
+    calls = []
+    a = GeoRSCLIPAdapter(loader=lambda: (calls.append(1), bundle)[1])
+    return a, texts_seen, calls
+
+
+def test_classify_ranks_default_labels_by_similarity_and_reports_provenance(png):
+    a, seen, calls = clip_adapter()
+    r = a.classify(str(png), top_k=3)
+    assert r["labels"][0]["label"] == "forest"
+    assert len(r["labels"]) == 3
+    assert r["labels"][0]["score"] > r["labels"][1]["score"]
+    assert 0 < sum(x["score"] for x in r["labels"]) <= 1.0001
+    assert r["label_set"] == "default" and r["prompt_template"] == PROMPT_TEMPLATE
+    assert (r["model_id"], r["device"], r["dtype"]) == ("georsclip-vit-b-32", "cpu", "float32")
+    assert r["load_info"] == {"missing_keys": 0, "unexpected_keys": 2}
+    assert seen[0] == [PROMPT_TEMPLATE.format(n) for n in DEFAULT_LABELS]
+    assert len(calls) == 1
+
+
+def test_classify_accepts_custom_labels_and_caches_text_embeddings(png):
+    a, seen, _ = clip_adapter(image_vec=(0.0, 1.0, 0.0))
+    r1 = a.classify(str(png), labels=["water body", "forest"], top_k=2)
+    r2 = a.classify(str(png), labels=["water body", "forest"], top_k=1)
+    assert r1["labels"][0]["label"] == "water body" and r1["label_set"] == "custom"
+    assert len(r2["labels"]) == 1
+    assert len(seen) == 1
+
+
+def test_score_gives_cosine_similarity_per_text(png):
+    a, _, _ = clip_adapter()
+    r = a.score(str(png), ["green fields and a road", "water body"])
+    s = {x["text"]: x["similarity"] for x in r["scores"]}
+    assert s["green fields and a road"] > 0.9 and abs(s["water body"]) < 0.01
+    assert all(-1.0 <= v <= 1.0 for v in s.values())
+
+
+def test_embed_requires_exactly_one_input_and_returns_unit_vectors(png):
+    a, _, _ = clip_adapter()
+    v = a.embed(image_path=str(png))
+    assert abs(sum(x * x for x in v) - 1.0) < 1e-5
+    t = a.embed(text="forest")
+    assert abs(sum(x * x for x in t) - 1.0) < 1e-5
+    with pytest.raises(UnsupportedTask):
+        a.embed()
+    with pytest.raises(UnsupportedTask):
+        a.embed(image_path=str(png), text="x")
+
+
+def test_georsclip_availability_load_failures_and_bad_images(png, tmp_path, monkeypatch):
+    import importlib.util as iu
+
+    real = iu.find_spec
+    monkeypatch.setattr(iu, "find_spec", lambda n, *a, **k: None if n == "open_clip" else real(n, *a, **k))
+    ok, reason = GeoRSCLIPAdapter().check_availability()
+    assert ok is False and "open_clip_torch" in reason and "requirements-ml.txt" in reason
+
+    def boom():
+        raise OSError("offline")
+
+    with pytest.raises(ModelUnavailable, match="offline"):
+        GeoRSCLIPAdapter(loader=boom).classify(str(png))
+    bad = tmp_path / "x.png"
+    bad.write_text("nope")
+    a, _, _ = clip_adapter()
+    with pytest.raises(UnsupportedTask):
+        a.classify(str(bad))
+
+
+def test_mtrs_paper_is_registered_as_a_documented_unavailable_candidate(png):
+    a = mtrs_change_captioner()
+    ok, reason = a.check_availability()
+    assert ok is False and "24B" in reason and "no code or weights link" in reason
+    info = a.info()
+    assert info.id == "mtrs-mvlt-lora-cc" and info.tasks == ["change-caption"]
+    assert info.resources["paper"] == "https://doi.org/10.3390/rs18010166"
+
+
+@pytest.fixture
+def clip_registered(stubs):
+    a, _, _ = clip_adapter()
+    registry.unregister("georsclip-vit-b-32")
+    registry.register(a)
+    yield
+    registry.unregister("georsclip-vit-b-32")
+    from app.models.georsclip import GeoRSCLIPAdapter as G
+    registry.register(G())
+
+
+def test_classify_and_score_endpoints_work_and_validate(clip_registered):
+    r = client.post("/classify", json={"image_path": "c.png", "top_k": 2})
+    assert r.status_code == 200 and r.json()["labels"][0]["label"] == "forest" and len(r.json()["labels"]) == 2
+    r = client.post("/classify", json={"image_path": "c.png", "labels": ["water body", "forest"]})
+    assert r.json()["labels"][0]["label"] in ("forest", "water body")
+    r = client.post("/score", json={"image_path": "c.png", "texts": ["green fields and a road"]})
+    assert r.status_code == 200 and r.json()["scores"][0]["similarity"] > 0.9
+    codes = [
+        client.post("/classify", json={"image_path": "c.png", "labels": ["only one"]}).status_code,
+        client.post("/classify", json={"image_path": "c.png", "labels": ["a", " "]}).status_code,
+        client.post("/classify", json={"image_path": "../../etc/passwd"}).status_code,
+        client.post("/classify", json={"image_path": "missing.png"}).status_code,
+        client.post("/score", json={"image_path": "c.png", "texts": []}).status_code,
+        client.post("/score", json={"image_path": "c.png", "texts": ["x" * 2000]}).status_code,
+        client.post("/classify", json={"image_path": "c.png", "model_id": "stub-ok"}).status_code,
+        client.post("/classify", json={"image_path": "c.png", "model_id": "nope"}).status_code,
+    ]
+    assert codes == [422, 422, 400, 404, 422, 422, 422, 404]
+
+
+def test_classify_without_packages_reports_unavailable(stubs, monkeypatch):
+    import importlib.util as iu
+
+    real = iu.find_spec
+    monkeypatch.setattr(iu, "find_spec", lambda n, *a, **k: None if n == "open_clip" else real(n, *a, **k))
+    r = client.post("/classify", json={"image_path": "c.png"})
+    assert r.status_code == 503 and "open_clip_torch" in r.json()["error"]["message"]
