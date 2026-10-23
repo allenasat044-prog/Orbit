@@ -1062,15 +1062,15 @@ function App({ onNavigate }) {
   };
   return <div className={`page ${prototype ? "prototype" : ""}`}>
     <header className="site-header">
-      <a href="./" className="wordmark" aria-label="Orbit Delivery home"><svg viewBox="0 0 38 38" aria-hidden="true"><defs><radialGradient id="logo-light" cx="30%" cy="20%"><stop stopColor="#7d9efa" /><stop offset="1" stopColor="#4674e9" /></radialGradient></defs><circle cx="23" cy="15" r="14" fill="url(#logo-light)" /><circle cx="10" cy="27" r="8" fill="#6389f0" /><circle cx="15" cy="8" r="3.5" fill="#b2c7ff" opacity=".45" /></svg><span className="brand-type">orbit<small>delivery</small></span></a>
+      <a href="./" className="wordmark" aria-label="Orbit Delivery home"><svg viewBox="0 0 38 38" aria-hidden="true"><defs><radialGradient id="logo-light" cx="30%" cy="20%"><stop stopColor="#7d9efa" /><stop offset="1" stopColor="#4674e9" /></radialGradient></defs><circle cx="23" cy="15" r="14" fill="url(#logo-light)" /><circle cx="10" cy="27" r="8" fill="#6389f0" /><circle cx="15" cy="8" r="3.5" fill="#b2c7ff" opacity=".45" /></svg><span className="brand-type">orbit<small>EARTH OBSERVATION</small></span></a>
       <nav aria-label="Main navigation">{NAV.map(([label, path]) => <button key={path} onClick={() => onNavigate?.(path)}>{label}</button>)}</nav>
       <button className="header-cta" onClick={() => onNavigate?.("/explore")}>Launch explorer</button>
     </header>
     <main><section className="hero" aria-labelledby="hero-title">
       <div className="hero-copy">
-        <p className="eyebrow">Good things, on their way</p>
-        <h1 id="hero-title">Good things.<br />Delivered<br /><em>with care.</em></h1>
-        <p className="hero-description">Parcels, packages, and a little peace of mind.<br className="desktop-break" /> From your doorstep to theirs.</p>
+        <p className="eyebrow">AI-powered captions that bring satellite imagery to life</p>
+        <h1 id="hero-title">Satellite <br />vision <br /><em>Earth's story.</em></h1>
+        <p className="hero-description">Satellite imagery, intelligent captions, and a clearer view of Earth.<br className="desktop-break" />From orbit to understanding.</p>
         <button className="explore-button" onClick={() => onNavigate?.("/explore")}>Launch explorer <Arrow /></button>
       </div>
       <div className="visual-column">
@@ -1132,7 +1132,7 @@ function App({ onNavigate }) {
       <p id="planet-instructions" className="sr-only">Drag in any direction, or use the arrow keys, to rotate the 3D planet. Space pauses the planet and lets the courier wave; press again to start. Rotation is locked while paused. On touch screens, swipe outside the planet to scroll the page.</p>
       <div className="cloud-bank" aria-hidden="true"><i /><i /><i /><i /><i /></div>
     </section></main>
-    <footer className="site-footer"><p className="footer-left">Small parcels<br />Big possibilities</p><button className="motion-button" onClick={toggleMotion} aria-pressed={!auto} aria-label={auto ? "Pause and greet the courier" : "Start moving"}>{auto ? <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5v10m6-10v10" stroke="currentColor" strokeWidth="1.5" /></svg> : <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 8 6-8 6Z" fill="currentColor" /></svg>}<span>{auto ? "Pause" : "Start"}</span></button><p className="footer-right">A little<br />closer<br />to you</p></footer>
+    <footer className="site-footer"><p className="footer-left">Tiny pixels<br />Big possibilities</p><button className="motion-button" onClick={toggleMotion} aria-pressed={!auto} aria-label={auto ? "Pause and greet the courier" : "Start moving"}>{auto ? <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5v10m6-10v10" stroke="currentColor" strokeWidth="1.5" /></svg> : <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 4 8 6-8 6Z" fill="currentColor" /></svg>}<span>{auto ? "Pause" : "Start"}</span></button><p className="footer-right">A little<br />closer<br />to you</p></footer>
     {prototype && <aside className="prototype-label">Movement prototype <a href="./">View finished scene ↗</a></aside>}
     {story && <StoryDialog story={story} onClose={() => setStory(null)} />}
   </div>;
