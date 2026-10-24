@@ -147,3 +147,45 @@ def extract_chip(src_path: Path, out_path: Path, lon: float, lat: float, size_px
         "sha256": hashlib.sha256(out_path.read_bytes()).hexdigest(),
         "display": display,
     }
+
+
+def extract_label_chip(src_path: Path, out_path: Path, lon: float, lat: float, size_px: int, pixel_m: float = 10.0) -> dict:
+    """Cut a single-band class map (such as Sentinel-2 SCL) onto the same north-up grid as extract_chip, using nearest-neighbour."""
+    if not src_path.exists():
+        raise RasterError("raster_not_found", "Source raster does not exist.", 404)
+    try:
+        ds = rasterio.open(src_path)
+    except rasterio.errors.RasterioIOError as err:
+        raise RasterError("unreadable_raster", f"Could not open raster: {err}")
+
+    with ds:
+        if ds.crs is None:
+            raise RasterError("no_georeferencing", "Raster has no coordinate reference system.")
+        if ds.count < 1 or ds.dtypes[0] != "uint8":
+            raise RasterError("unsupported_raster", "Expected an 8-bit class map.")
+        xs, ys = transform("EPSG:4326", ds.crs, [lon], [lat])
+        row, col = ds.index(xs[0], ys[0])
+        if not (0 <= row < ds.height and 0 <= col < ds.width):
+            raise RasterError("point_outside_raster", "The pin is outside this raster.")
+
+        per_lat, per_lon = meters_per_degree(lat)
+        dlat, dlon = pixel_m / per_lat, pixel_m / per_lon
+        west, north = lon - size_px / 2 * dlon, lat + size_px / 2 * dlat
+        east, south = west + size_px * dlon, north - size_px * dlat
+        dst_transform = from_origin(west, north, dlon, dlat)
+
+        cx, cy = transform("EPSG:4326", ds.crs, [west, east, east, west], [north, north, south, south])
+        idx = [ds.index(x, y) for x, y in zip(cx, cy)]
+        rows, cols = [i[0] for i in idx], [i[1] for i in idx]
+        r0, r1 = max(min(rows) - 2, 0), min(max(rows) + 2, ds.height)
+        c0, c1 = max(min(cols) - 2, 0), min(max(cols) + 2, ds.width)
+        window = Window(c0, r0, c1 - c0, r1 - r0)
+        data = ds.read(1, window=window)
+        src_transform = ds.window_transform(window)
+        src_crs = ds.crs
+
+    dest = np.zeros((size_px, size_px), np.uint8)
+    reproject(source=data, destination=dest, src_transform=src_transform, src_crs=src_crs, dst_transform=dst_transform, dst_crs="EPSG:4326", resampling=Resampling.nearest)
+    save_png_atomic(Image.fromarray(dest, "L"), out_path)
+    values, counts = np.unique(dest, return_counts=True)
+    return {"width_px": int(size_px), "height_px": int(size_px), "classes": {str(int(v)): int(c) for v, c in zip(values, counts)}}

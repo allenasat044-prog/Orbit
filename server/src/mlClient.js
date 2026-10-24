@@ -37,3 +37,5 @@ export const mlModels = (baseUrl, timeoutMs = 10000) => mlRequest(baseUrl, "/mod
 export const mlModel = (baseUrl, id, timeoutMs = 10000) => mlRequest(baseUrl, `/models/${encodeURIComponent(id)}`, { timeoutMs });
 export const mlClassify = (baseUrl, body, timeoutMs = 120000) => mlRequest(baseUrl, "/classify", { method: "POST", body, timeoutMs });
 export const mlScore = (baseUrl, body, timeoutMs = 120000) => mlRequest(baseUrl, "/score", { method: "POST", body, timeoutMs });
+export const mlLabelChip = (baseUrl, body, timeoutMs = 120000) => mlRequest(baseUrl, "/raster/label-chip", { method: "POST", body, timeoutMs });
+export const mlChange = (baseUrl, body, timeoutMs = 180000) => mlRequest(baseUrl, "/change/analyze", { method: "POST", body, timeoutMs });

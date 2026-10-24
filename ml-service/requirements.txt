@@ -3,3 +3,4 @@ uvicorn[standard]>=0.30
 rasterio>=1.3
 numpy>=1.24
 pillow>=10.0
+scipy>=1.10

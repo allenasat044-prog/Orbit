@@ -28,6 +28,24 @@ type Comparison = {
   scene_error: { message: string } | null;
   unavailable: { model_id: string; name: string; reason: string }[];
 };
+type SceneRef = { acquired_at: string; platform: string | null; cloud_cover: number | null; display_url: string };
+type Analysis = {
+  id: string;
+  status: "ok" | "insufficient_data";
+  scl_used: boolean;
+  bounds: { west: number; south: number; east: number; north: number } | null;
+  before: SceneRef;
+  after: SceneRef;
+  overlay_url: string | null;
+  notes: string[];
+  results: {
+    changed_area_ha?: number;
+    changed_fraction?: number;
+    cloud_masked_fraction?: number | null;
+    valid_fraction?: number;
+    transitions?: { from: string; to: string; area_ha: number }[];
+  };
+};
 type Zoom = { px: number; name: string; km: string };
 
 const ZOOMS: Zoom[] = [
@@ -58,6 +76,7 @@ export default function Explore() {
   const source = useRef<GeoJsonDataSource | undefined>(undefined);
   const pin = useRef<Entity | undefined>(undefined);
   const overlay = useRef<ImageryLayer | undefined>(undefined);
+  const changeLayers = useRef<{ base?: ImageryLayer; changes?: ImageryLayer }>({});
   const onPick = useRef<(lat: number, lon: number) => void>(() => {});
   const [msg, setMsg] = useState(HINT);
   const [items, setItems] = useState<Item[]>([]);
@@ -73,6 +92,11 @@ export default function Explore() {
   const [captionBusy, setCaptionBusy] = useState(false);
   const [comparison, setComparison] = useState<Comparison | null>(null);
   const [compareBusy, setCompareBusy] = useState(false);
+  const [beforeItem, setBeforeItem] = useState<Item | null>(null);
+  const [afterItem, setAfterItem] = useState<Item | null>(null);
+  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [analysisBusy, setAnalysisBusy] = useState(false);
+  const [showChanges, setShowChanges] = useState(true);
   const [pinName, setPinName] = useState("");
   const [autoCaption, setAutoCaption] = useState(false);
   const [monitorBusy, setMonitorBusy] = useState(false);
@@ -126,6 +150,41 @@ export default function Explore() {
     v.camera.flyTo({ destination: Rectangle.fromDegrees(w - padX, s - padY, e + padX, n + padY) });
   };
 
+  const clearChange = () => {
+    const v = viewer.current;
+    const { base, changes } = changeLayers.current;
+    if (v && base) v.imageryLayers.remove(base, true);
+    if (v && changes) v.imageryLayers.remove(changes, true);
+    changeLayers.current = {};
+    if (source.current) source.current.show = true;
+  };
+
+  const showChangeOnGlobe = async (a: Analysis) => {
+    const v = viewer.current;
+    if (!v || !a.bounds) return;
+    clearChange();
+    clearOverlay();
+    const rect = Rectangle.fromDegrees(a.bounds.west, a.bounds.south, a.bounds.east, a.bounds.north);
+    const base = v.imageryLayers.addImageryProvider(await SingleTileImageryProvider.fromUrl(a.after.display_url, { rectangle: rect }));
+    changeLayers.current.base = base;
+    if (a.overlay_url) {
+      const changes = v.imageryLayers.addImageryProvider(await SingleTileImageryProvider.fromUrl(a.overlay_url, { rectangle: rect }));
+      changes.show = showChanges;
+      changeLayers.current.changes = changes;
+    }
+    if (source.current) source.current.show = false;
+    const padX = (a.bounds.east - a.bounds.west) * 0.25, padY = (a.bounds.north - a.bounds.south) * 0.25;
+    v.camera.flyTo({ destination: Rectangle.fromDegrees(a.bounds.west - padX, a.bounds.south - padY, a.bounds.east + padX, a.bounds.north + padY) });
+  };
+
+  const toggleChanges = () => {
+    const next = !showChanges;
+    setShowChanges(next);
+    if (changeLayers.current.changes) changeLayers.current.changes.show = next;
+  };
+
+  const closeAnalysis = () => { clearChange(); setAnalysis(null); };
+
   const closeChip = () => { clearOverlay(); setChip(null); setCaption(null); setComparison(null); };
 
   const draw = async (list: Item[]) => {
@@ -153,7 +212,7 @@ export default function Explore() {
       setCredit([data.attribution?.imagery, data.attribution?.geocoding].filter(Boolean).join(" · "));
       await draw(all);
       const pt: Point | null = data.point ?? (append ? point : null);
-      if (!append) { setPoint(pt); clearOverlay(); setChip(null); setCaption(null); setComparison(null); }
+      if (!append) { setPoint(pt); clearOverlay(); clearChange(); setChip(null); setCaption(null); setComparison(null); setAnalysis(null); setBeforeItem(null); setAfterItem(null); }
       const label = pinLabel ?? data.place?.name ?? (pt ? `${pt.lat.toFixed(4)}, ${pt.lon.toFixed(4)}` : "");
       if (!append && pt) { setPinName(label); placePin(pt, label, true); }
       const where = pt ? ` at ${pt.lat.toFixed(4)}, ${pt.lon.toFixed(4)}` : "";
@@ -303,6 +362,57 @@ export default function Explore() {
     }
   };
 
+  const analyzeChange = async () => {
+    const token = getToken();
+    if (!point) { setMsg("Drop a pin first: search a place or click the globe."); return; }
+    if (!token) { setMsg("Log in to analyse change."); return; }
+    if (!beforeItem || !afterItem) { setMsg("Pick two scenes first: press Before on one and After on another."); return; }
+    if (beforeItem.external_id === afterItem.external_id) { setMsg("Pick two different scenes."); return; }
+    const auth = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+    setAnalysisBusy(true);
+    try {
+      const ids: string[] = [];
+      for (const item of [beforeItem, afterItem]) {
+        let id = item.id;
+        if (!id) {
+          setMsg("Registering scenes…");
+          const r = await fetch("/api/imagery/ingest", { method: "POST", headers: auth, body: JSON.stringify({ collection: item.collection, external_id: item.external_id }) });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) { setMsg(d?.error?.message ?? `Could not register a scene (${r.status})`); return; }
+          id = d.acquisition.id as string;
+          setItems((prev) => prev.map((i) => (i.external_id === item.external_id ? { ...i, ingested: true, id } : i)));
+        }
+        ids.push(id as string);
+      }
+      setMsg("Comparing the two dates. The first time downloads both scenes, which can take a few minutes…");
+      const res = await fetch("/api/analysis/compare", { method: "POST", headers: auth, body: JSON.stringify({ before_id: ids[0], after_id: ids[1], lat: point.lat, lon: point.lon, size_px: zoomPx }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setMsg(data?.error?.message ?? `Could not start the analysis (${res.status})`); return; }
+      const jobId = data.job.id as string;
+      let analysisId: string | undefined;
+      for (let i = 0; i < 300 && !analysisId; i++) {
+        await sleep(2000);
+        const jr = await fetch(`/api/jobs/${jobId}`, { headers: { Authorization: `Bearer ${token}` } });
+        const jd = await jr.json().catch(() => ({}));
+        if (!jr.ok) { setMsg(jd?.error?.message ?? `Could not check the analysis job (${jr.status})`); return; }
+        if (jd.job.status === "failed") { setMsg(jd.job.error?.message ?? "The analysis failed."); return; }
+        if (jd.job.status === "succeeded") analysisId = jd.job.result.analysis_id as string;
+      }
+      if (!analysisId) { setMsg("The analysis is taking too long. Try again in a moment."); return; }
+      const ar = await fetch(`/api/analysis/${analysisId}`);
+      const ad = await ar.json().catch(() => ({}));
+      if (!ar.ok) { setMsg(ad?.error?.message ?? "Could not load the analysis."); return; }
+      setAnalysis(ad.analysis);
+      setShowChanges(true);
+      await showChangeOnGlobe(ad.analysis);
+      setMsg(ad.analysis.status === "ok" ? "Change analysis ready." : "The analysis could not measure change for these scenes. See the note below.");
+    } catch {
+      setMsg("Can't reach the server. Is the backend running on port 3000?");
+    } finally {
+      setAnalysisBusy(false);
+    }
+  };
+
   const monitorHere = async () => {
     const token = getToken();
     if (!point) { setMsg("Drop a pin first: search a place or click the globe."); return; }
@@ -385,6 +495,9 @@ export default function Explore() {
             <input type="checkbox" checked={autoCaption} onChange={(e) => setAutoCaption(e.target.checked)} />
             also describe new scenes
           </label>
+          <button type="button" disabled={analysisBusy || !beforeItem || !afterItem} onClick={() => void analyzeChange()} className="rounded-md border border-white/10 px-2 py-1 text-xs text-[#8daaff] disabled:text-muted-foreground">
+            {analysisBusy ? "Analysing…" : "Analyse change"}
+          </button>
           <button type="button" disabled={runBusy} onClick={() => void runUpdate()} className="rounded-md border border-white/10 px-2 py-1 text-xs text-[#8daaff] disabled:text-muted-foreground">
             {runBusy ? "Checking…" : "Check for new scenes now"}
           </button>
@@ -413,6 +526,8 @@ export default function Explore() {
                 {new Date(i.acquired_at).toISOString().slice(0, 10)} · {i.platform ?? i.collection} · {i.cloud_cover != null ? `${i.cloud_cover.toFixed(0)}% cloud` : "no cloud data"}{i.gsd ? ` · ${i.gsd} m` : ""}
               </button>
               <span className="flex items-center gap-3">
+                <button type="button" onClick={() => setBeforeItem(beforeItem?.external_id === i.external_id ? null : i)} className={`text-xs ${beforeItem?.external_id === i.external_id ? "font-semibold text-[#8daaff]" : "text-muted-foreground hover:text-white"}`}>Before</button>
+                <button type="button" onClick={() => setAfterItem(afterItem?.external_id === i.external_id ? null : i)} className={`text-xs ${afterItem?.external_id === i.external_id ? "font-semibold text-[#8daaff]" : "text-muted-foreground hover:text-white"}`}>After</button>
                 <button type="button" disabled={chipBusy !== null} onClick={() => void previewChip(i)} className="text-xs text-[#8daaff] disabled:text-muted-foreground">
                   {chipBusy === i.external_id ? "Working…" : "Preview"}
                 </button>
@@ -483,6 +598,46 @@ export default function Explore() {
           <p className="text-xs text-muted-foreground">
             North is up and the red ring is your pin. Each pixel covers about {chip.gsd_m ?? 10} × {chip.gsd_m ?? 10} m on the ground, which is the finest detail Sentinel-2 true colour has: roads, fields, water and large buildings show, but not individual houses or cars.
           </p>
+        </div>
+      )}
+      {analysis && (
+        <div className="space-y-3 rounded-2xl border border-white/10 p-3">
+          <div className="flex items-center justify-between text-sm">
+            <span>Change between {analysis.before.acquired_at.slice(0, 10)} and {analysis.after.acquired_at.slice(0, 10)}</span>
+            <span className="flex items-center gap-3">
+              {analysis.overlay_url && <button type="button" onClick={toggleChanges} className="text-xs text-[#8daaff]">{showChanges ? "Hide changes on globe" : "Show changes on globe"}</button>}
+              <button type="button" onClick={closeAnalysis} className="text-xs text-muted-foreground hover:text-white">Close</button>
+            </span>
+          </div>
+          <div className="grid max-w-[640px] grid-cols-2 gap-2">
+            {[["Earlier", analysis.before], ["Later", analysis.after]].map(([label, s]) => (
+              <figure key={label as string} className="space-y-1">
+                <img src={(s as SceneRef).display_url} alt={`${label} scene`} className="block w-full rounded-lg" />
+                <figcaption className="text-xs text-muted-foreground">{label as string}: {(s as SceneRef).acquired_at.slice(0, 10)} · {(s as SceneRef).platform ?? "satellite"}</figcaption>
+              </figure>
+            ))}
+          </div>
+          {analysis.status === "ok" ? (
+            <div className="space-y-1 text-sm">
+              <p>
+                About {analysis.results.changed_area_ha} ha flagged as changed ({Math.round((analysis.results.changed_fraction ?? 0) * 1000) / 10}% of the usable area).
+                {analysis.results.cloud_masked_fraction != null && ` Clouds and shadows excluded: ${Math.round(analysis.results.cloud_masked_fraction * 1000) / 10}% of the area.`}
+              </p>
+              {analysis.results.transitions && analysis.results.transitions.length > 0 && (
+                <ul className="text-xs text-muted-foreground">
+                  {analysis.results.transitions.map((t) => (
+                    <li key={`${t.from}-${t.to}`}>{t.from} to {t.to}: about {t.area_ha} ha</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm">The analysis could not measure change for these two scenes.</p>
+          )}
+          <ul className="space-y-0.5 text-xs text-muted-foreground">
+            {analysis.notes.map((n) => <li key={n}>{n}</li>)}
+          </ul>
+          <p className="text-xs text-muted-foreground">Measured by image analysis, not AI. Areas are approximate, and a difference between two images is not a confirmed real-world event: lighting, season, haze and alignment can all create apparent change.</p>
         </div>
       )}
       {next && <button type="button" disabled={busy} onClick={loadMore} className="text-sm text-[#8daaff] disabled:text-muted-foreground">Load more</button>}

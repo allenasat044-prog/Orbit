@@ -14,7 +14,28 @@ export const chipKey = (lon, lat, size) => `${lon.toFixed(5)},${lat.toFixed(5)},
 
 const extFor = (type) => (/jp2|jpeg ?2000/i.test(type ?? "") ? ".jp2" : /tiff/i.test(type ?? "") ? ".tif" : ".dat");
 
+export function createAssetEnsurer({ assets, tokens, storage, download, limits }) {
+  return async function ensureAsset(acq, assetKey) {
+    const meta = acq.assets?.[assetKey];
+    if (!meta?.https_href) throw new JobError("no_download_url", "This scene's image has no download URL.");
+    const existing = await assets.find(acq.id, assetKey);
+    if (existing) return existing;
+    const rel = `assets/${acq.id}/${assetKey}${extFor(meta.type)}`;
+    const token = await tokens.getToken();
+    await storage.ensureDir(rel);
+    let info;
+    try {
+      info = await download({ url: meta.https_href, destPath: storage.resolve(rel), token, maxBytes: limits.maxBytes, allowedHosts: limits.allowedHosts, timeoutMs: limits.timeoutMs });
+    } catch (err) {
+      if (err instanceof ProviderAuthError || err?.code === "provider_auth_failed") tokens.invalidate();
+      throw err;
+    }
+    return assets.insert({ acquisition_id: acq.id, asset_key: assetKey, storage_path: rel, sha256: info.sha256, size_bytes: info.size, content_type: info.contentType ?? meta.type });
+  };
+}
+
 export function createChipHandler({ acquisitions, assets, chips, tokens, storage, download, mlChip, limits }) {
+  const ensureAsset = createAssetEnsurer({ assets, tokens, storage, download, limits });
   return async function prepareChip({ acquisition_id, lon, lat, size_px }) {
     const acq = await acquisitions.findById(acquisition_id);
     if (!acq) throw new JobError("acquisition_not_found", "Scene not found.");
@@ -24,23 +45,7 @@ export function createChipHandler({ acquisitions, assets, chips, tokens, storage
 
     const assetKey = acq.visual_asset_key;
     if (!assetKey) throw new JobError("no_visual_asset", "This scene has no true-colour image asset.");
-    const meta = acq.assets?.[assetKey];
-    if (!meta?.https_href) throw new JobError("no_download_url", "This scene's image has no download URL.");
-
-    let asset = await assets.find(acq.id, assetKey);
-    if (!asset) {
-      const rel = `assets/${acq.id}/${assetKey}${extFor(meta.type)}`;
-      const token = await tokens.getToken();
-      await storage.ensureDir(rel);
-      let info;
-      try {
-        info = await download({ url: meta.https_href, destPath: storage.resolve(rel), token, maxBytes: limits.maxBytes, allowedHosts: limits.allowedHosts, timeoutMs: limits.timeoutMs });
-      } catch (err) {
-        if (err instanceof ProviderAuthError || err?.code === "provider_auth_failed") tokens.invalidate();
-        throw err;
-      }
-      asset = await assets.insert({ acquisition_id: acq.id, asset_key: assetKey, storage_path: rel, sha256: info.sha256, size_bytes: info.size, content_type: info.contentType ?? meta.type });
-    }
+    const asset = await ensureAsset(acq, assetKey);
 
     const id = crypto.randomUUID();
     const outRel = `chips/${id}.png`;

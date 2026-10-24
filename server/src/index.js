@@ -12,9 +12,12 @@ import { downloadToFile } from "./providers/download.js";
 import { createJobsRepo } from "./jobs/repo.js";
 import { createJobRunner } from "./jobs/runner.js";
 import { createAssetsRepo, createChipsRepo } from "./imagery/chipRepo.js";
-import { createChipHandler } from "./imagery/chipJob.js";
+import { createChipHandler, createAssetEnsurer } from "./imagery/chipJob.js";
 import { createChipRouter } from "./imagery/chipRoutes.js";
-import { mlChip, mlCaption, mlModels, mlModel, mlClassify, mlScore } from "./mlClient.js";
+import { mlChip, mlCaption, mlModels, mlModel, mlClassify, mlScore, mlLabelChip, mlChange } from "./mlClient.js";
+import { createAnalysesRepo } from "./analysis/repo.js";
+import { createAnalysisHandler } from "./analysis/job.js";
+import { createAnalysisRouter } from "./analysis/routes.js";
 import { createComparisonsRepo } from "./comparisons/repo.js";
 import { createCompareHandler } from "./comparisons/job.js";
 import { createComparisonRouter } from "./comparisons/routes.js";
@@ -49,6 +52,10 @@ const chipHandler = createChipHandler({
   mlChip: (body) => mlChip(config.mlServiceUrl, body),
   limits: { maxBytes: config.maxDownloadBytes, allowedHosts: config.downloadAllowedHosts, timeoutMs: config.downloadTimeoutMs },
 });
+const downloadLimits = { maxBytes: config.maxDownloadBytes, allowedHosts: config.downloadAllowedHosts, timeoutMs: config.downloadTimeoutMs };
+const assetsRepo = createAssetsRepo(pool);
+const ensureAsset = createAssetEnsurer({ assets: assetsRepo, tokens, storage, download: downloadToFile, limits: downloadLimits });
+const analyses = createAnalysesRepo(pool);
 const captionHandler = createCaptionHandler({ chips, captions, mlCaption: (body) => mlCaption(config.mlServiceUrl, body) });
 const comparisons = createComparisonsRepo(pool);
 const regions = createRegionsRepo(pool);
@@ -60,6 +67,11 @@ const runner = createJobRunner({
   handlers: {
     prepare_chip: chipHandler,
     generate_caption: captionHandler,
+    analyze_change: createAnalysisHandler({
+      acquisitions, chips, analyses, chipHandler, ensureAsset, storage,
+      mlLabelChip: (b) => mlLabelChip(config.mlServiceUrl, b),
+      mlChange: (b) => mlChange(config.mlServiceUrl, b),
+    }),
     compare_models: createCompareHandler({
       chips, captions, captionHandler, comparisons,
       listModels: () => mlModels(config.mlServiceUrl),
@@ -76,6 +88,7 @@ const runner = createJobRunner({
 const app = createApp({
   routers: [
     { path: "/api", router: createChipRouter({ config, acquisitions, chips, jobs, runner, storage }) },
+    { path: "/api", router: createAnalysisRouter({ config, acquisitions, analyses, runner, storage }) },
     { path: "/api", router: createRegionRouter({ config, regions }) },
     { path: "/api", router: createUpdateRouter({ config, runs: updateRuns, runner }) },
     { path: "/api", router: createComparisonRouter({ config, chips, comparisons, runner }) },

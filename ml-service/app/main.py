@@ -12,7 +12,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.errors import ModelError, ModelUnavailable, UnsupportedTask
 from app.models.defaults import DEFAULT_CAPTION_MODEL, DEFAULT_MATCH_MODEL, register_defaults
 from app.models.registry import registry
-from app.raster import RasterError, extract_chip, raster_support, safe_path
+from app.change import ChangeError, analyze_change
+from app.raster import RasterError, extract_chip, extract_label_chip, raster_support, safe_path
 
 VERSION = "0.1.0"
 
@@ -161,3 +162,43 @@ def score(req: ScoreRequest):
     if not path.exists():
         return _err(404, "image_not_found", "Image file does not exist.")
     return adapter.score(str(path), [x.strip() for x in req.texts])
+
+
+class LabelChipRequest(BaseModel):
+    path: str
+    out_path: str
+    lon: float = Field(ge=-180, le=180)
+    lat: float = Field(ge=-90, le=90)
+    size_px: int = Field(default=512, ge=64, le=2048)
+    pixel_m: float = Field(default=10.0, gt=0, le=1000)
+
+
+@app.post("/raster/label-chip")
+def raster_label_chip(req: LabelChipRequest):
+    return extract_label_chip(safe_path(req.path), safe_path(req.out_path), req.lon, req.lat, req.size_px, req.pixel_m)
+
+
+class ChangeRequest(BaseModel):
+    before_path: str
+    after_path: str
+    overlay_out_path: str
+    before_scl_path: str | None = None
+    after_scl_path: str | None = None
+    pixel_m: float = Field(default=10.0, gt=0, le=1000)
+
+
+@app.exception_handler(ChangeError)
+async def change_error(_: Request, exc: ChangeError):
+    return JSONResponse(status_code=exc.status, content={"error": {"code": exc.code, "message": exc.message}})
+
+
+@app.post("/change/analyze")
+def change_analyze(req: ChangeRequest):
+    if (req.before_scl_path is None) != (req.after_scl_path is None):
+        return _err(422, "invalid_request", "Give both class maps or neither.")
+    return analyze_change(
+        safe_path(req.before_path), safe_path(req.after_path), safe_path(req.overlay_out_path),
+        safe_path(req.before_scl_path) if req.before_scl_path else None,
+        safe_path(req.after_scl_path) if req.after_scl_path else None,
+        req.pixel_m,
+    )
