@@ -983,7 +983,15 @@ var stories = {
   "For business": { title: "Your business. On the move.", paragraphs: ["Orders heading out. Supplies coming in. A thoughtful delivery experience connects both sides of your business.", "Orbit Delivery puts the people behind every parcel at the heart of the journey."] },
   "Our story": { title: "Every parcel brings us closer.", paragraphs: ["A gift for someone far away. An order someone has been waiting for. An everyday essential, right at the door.", "Orbit Delivery is built around a simple idea: what we carry matters, and so does how we get it there."] }
 };
-var NAV = [["Explore", "/explore"], ["Captions", "/captions"], ["Analysis", "/analysis"], ["Dashboard", "/dashboard"]];
+var NAV = [["Home", "/"], ["Explore", "/explore"], ["Captions", "/captions"], ["Analysis", "/analysis"], ["Dashboard", "/dashboard"], ["FAQ", "/faqs"]];
+var NAV_ICONS = {
+  "/": <><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></>,
+  "/explore": <><circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" /></>,
+  "/captions": <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,
+  "/analysis": <><path d="M3 3v18h18" /><path d="M18 17V9" /><path d="M13 17V5" /><path d="M8 17v-3" /></>,
+  "/dashboard": <><rect width="7" height="9" x="3" y="3" rx="1" /><rect width="7" height="5" x="14" y="3" rx="1" /><rect width="7" height="9" x="14" y="12" rx="1" /><rect width="7" height="5" x="3" y="16" rx="1" /></>,
+  "/faqs": <><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" /></>
+};
 function App({ onNavigate }) {
   const motion = useRef5(createMotion());
   const interaction = useRef5(null);
@@ -1063,7 +1071,7 @@ function App({ onNavigate }) {
   return <div className={`page ${prototype ? "prototype" : ""}`}>
     <header className="site-header">
       <a href="./" className="wordmark" aria-label="Orbit Delivery home"><svg viewBox="0 0 38 38" aria-hidden="true"><defs><radialGradient id="logo-light" cx="30%" cy="20%"><stop stopColor="#7d9efa" /><stop offset="1" stopColor="#4674e9" /></radialGradient></defs><circle cx="23" cy="15" r="14" fill="url(#logo-light)" /><circle cx="10" cy="27" r="8" fill="#6389f0" /><circle cx="15" cy="8" r="3.5" fill="#b2c7ff" opacity=".45" /></svg><span className="brand-type">orbit<small>EARTH OBSERVATION</small></span></a>
-      <nav aria-label="Main navigation">{NAV.map(([label, path]) => <button key={path} onClick={() => onNavigate?.(path)}>{label}</button>)}</nav>
+      <nav aria-label="Main navigation">{NAV.map(([label, path]) => <button key={path} className={path === "/" ? "active" : ""} onClick={() => onNavigate?.(path)}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{NAV_ICONS[path]}</svg>{label}</button>)}</nav>
       <button className="header-cta" onClick={() => onNavigate?.("/explore")}>Launch explorer</button>
     </header>
     <main><section className="hero" aria-labelledby="hero-title">
@@ -1169,6 +1177,7 @@ var css = `@font-face{font-family:'Orbit DM Sans';font-style:normal;font-weight:
 .orbit-delivery{width:100%;isolation:isolate;--orbit-bg:radial-gradient(ellipse at 6% 15%,#fffefa 0%,#fbfcff 38%,#f0f6ff 100%);--orbit-ink:#080e2b;--orbit-muted:#7a87aa;--orbit-nav:#4d5a83;--orbit-accent:#4a72e7;--orbit-cloud:1;color:var(--orbit-ink)}
 :is(.dark,[data-theme="dark"]) .orbit-delivery:not([data-theme="light"]),.orbit-delivery[data-theme="dark"]{--orbit-bg:radial-gradient(ellipse at 6% 15%,#151e32 0%,#0d1526 50%,#101e38 100%);--orbit-ink:#f3f6ff;--orbit-muted:#b0bed9;--orbit-nav:#becbe6;--orbit-accent:#8daaff;--orbit-cloud:.14;color-scheme:dark}
 .orbit-delivery .page{background:var(--orbit-bg);color:var(--orbit-ink)}
+.orbit-delivery .site-header nav{gap:4px}.orbit-delivery .site-header nav button{display:flex;align-items:center;gap:9px;padding:10px 15px;border-radius:12px;color:var(--orbit-nav);transition:background .2s,color .2s}.orbit-delivery .site-header nav button svg{width:17px;height:17px}.orbit-delivery .site-header nav button:hover{background:#ffffff12;color:#fff}.orbit-delivery .site-header nav button.active{background:#ffffff1a;color:#fff}
 .orbit-delivery .hero-description,.orbit-delivery .about-dialog p{color:var(--orbit-muted)}
 .orbit-delivery .site-header nav button{color:var(--orbit-nav)}
 .orbit-delivery h1 em{color:var(--orbit-accent)}

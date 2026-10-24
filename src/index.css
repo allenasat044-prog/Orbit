@@ -40,3 +40,4 @@
   --color-border: var(--border); --color-input: var(--input); --color-ring: var(--ring);
 }
 body { margin: 0; background: var(--background); color: var(--foreground); font-family: system-ui, sans-serif; }
+.orbit-search-input::placeholder { color: #565656; opacity: 1; }
