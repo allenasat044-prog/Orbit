@@ -13,10 +13,10 @@ import { cn } from "@/lib/utils";
 
 // ✏️ Put each developer's GitHub username in `github`. Name and role are labels you control.
 const TEAM = [
-  { github: "allenasat044-prog", name: "Shashank Patel", role: "Linux System Administrator" },
-  { github: "github-id-2", name: "Pankaj Pandurang", role: "Developer" },
-  { github: "github-id-3", name: "Anmol Poddar", role: "Developer" },
-  { github: "github-id-4", name: "Shikhar Srivastava", role: "Developer" },
+  { github: "allenasat044-prog", name: "Shashank Patel", role: "Developer" },
+  { github: "pankajt25", name: "Pankaj Pandurang Tike", role: "Developer" },
+  { github: "ANMOL16-IT", name: "Anmol Poddar", role: "Developer" },
+  { github: "FFloverSHIKHAR2006", name: "Shikhar Srivastava", role: "Developer" },
 ];
 
 const faqs = [
