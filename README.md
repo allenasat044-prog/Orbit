@@ -49,8 +49,8 @@ This README describes everything built so far, how it fits together, how to run 
 | 5 | Monitored locations and update runs feeding the Dashboard | Delivered, awaiting your test |
 | 6a | Research model registry: EarthGPT, SkySenseGPT, TerraScope, RS-LLaVA, MTRS paper recorded honestly as unavailable, with reasons | Delivered |
 | 6b | GeoRSCLIP scene tags, caption match scores, Compare models | Delivered, real weights not yet run on your Mac |
-| 7 | Historical change (same pin across dates, change maps) | Planned |
-| 8 | Weather forecast | Planned |
+| 7 | Historical change (same pin across dates, change maps) | Done |
+| 8 | Weather forecast | in progress done mostly |
 | 9 | Personal library (Bookmarks, Lists, Labels, Records, profile data) | Planned |
 | 10 | Automation and hardening (scheduled runs, API docs, security review) | Planned |
 | Hosting | Vercel + Supabase, Google and GitHub sign-in, SEO, one URL | Planned |
