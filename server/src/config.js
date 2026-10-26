@@ -24,5 +24,8 @@ export const config = {
   maxDownloadBytes: Number(process.env.MAX_DOWNLOAD_BYTES ?? 400_000_000),
   downloadTimeoutMs: Number(process.env.DOWNLOAD_TIMEOUT_MS ?? 300000),
   downloadAllowedHosts: (process.env.DOWNLOAD_ALLOWED_HOSTS ?? "dataspace.copernicus.eu").split(",").map((s) => s.trim()).filter(Boolean),
+  weatherUrl: process.env.WEATHER_URL ?? "https://api.open-meteo.com/v1/forecast",
+  weatherCacheTtlMs: Number(process.env.WEATHER_CACHE_TTL_MS ?? 600000),
+  weatherRateLimit: Number(process.env.WEATHER_RATE_LIMIT ?? 30),
   rateLimitPerMin: Number(process.env.RATE_LIMIT_PER_MIN ?? 300),
 };

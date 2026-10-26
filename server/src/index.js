@@ -15,6 +15,8 @@ import { createAssetsRepo, createChipsRepo } from "./imagery/chipRepo.js";
 import { createChipHandler, createAssetEnsurer } from "./imagery/chipJob.js";
 import { createChipRouter } from "./imagery/chipRoutes.js";
 import { mlChip, mlCaption, mlModels, mlModel, mlClassify, mlScore, mlLabelChip, mlChange } from "./mlClient.js";
+import { createWeatherProvider } from "./weather/openMeteo.js";
+import { createWeatherRouter } from "./weather/routes.js";
 import { createAnalysesRepo } from "./analysis/repo.js";
 import { createAnalysisHandler } from "./analysis/job.js";
 import { createAnalysisRouter } from "./analysis/routes.js";
@@ -56,6 +58,7 @@ const downloadLimits = { maxBytes: config.maxDownloadBytes, allowedHosts: config
 const assetsRepo = createAssetsRepo(pool);
 const ensureAsset = createAssetEnsurer({ assets: assetsRepo, tokens, storage, download: downloadToFile, limits: downloadLimits });
 const analyses = createAnalysesRepo(pool);
+const weather = createWeatherProvider({ baseUrl: config.weatherUrl, ttlMs: config.weatherCacheTtlMs });
 const captionHandler = createCaptionHandler({ chips, captions, mlCaption: (body) => mlCaption(config.mlServiceUrl, body) });
 const comparisons = createComparisonsRepo(pool);
 const regions = createRegionsRepo(pool);
@@ -88,6 +91,7 @@ const runner = createJobRunner({
 const app = createApp({
   routers: [
     { path: "/api", router: createChipRouter({ config, acquisitions, chips, jobs, runner, storage }) },
+    { path: "/api", router: createWeatherRouter({ config, weather }) },
     { path: "/api", router: createAnalysisRouter({ config, acquisitions, analyses, runner, storage }) },
     { path: "/api", router: createRegionRouter({ config, regions }) },
     { path: "/api", router: createUpdateRouter({ config, runs: updateRuns, runner }) },

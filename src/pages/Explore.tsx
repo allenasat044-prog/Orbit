@@ -3,6 +3,7 @@ import {
   Viewer, ImageryLayer, UrlTemplateImageryProvider, GeoJsonDataSource, Color, Rectangle, Entity,
   Cartesian2, Cartesian3, Cartographic, LabelStyle, ScreenSpaceEventHandler, ScreenSpaceEventType, Math as CesiumMath, SingleTileImageryProvider,
 } from "cesium";
+import { ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, ReferenceLine } from "recharts";
 import SearchGroup from "@/components/ui/v-group-18";
 import { getToken } from "@/lib/auth";
 
@@ -45,6 +46,19 @@ type Analysis = {
     valid_fraction?: number;
     transitions?: { from: string; to: string; area_ha: number }[];
   };
+};
+type Num = number | null;
+type Forecast = {
+  location: { timezone: string | null; elevation_m: number | null };
+  now_index: number | null;
+  hourly: {
+    time: string[]; temperature_c: Num[]; humidity_pct: Num[]; precipitation_probability_pct: Num[]; precipitation_mm: Num[];
+    cloud_cover_pct: Num[]; wind_speed_kmh: Num[]; wind_gust_kmh: Num[]; summary: string[];
+  };
+  daily: { date: string[]; tmax_c: Num[]; tmin_c: Num[]; precipitation_mm: Num[]; summary: string[] };
+  source: { attribution: string; url: string };
+  cached: boolean;
+  fetched_at: string;
 };
 type Zoom = { px: number; name: string; km: string };
 
@@ -97,6 +111,9 @@ export default function Explore() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [analysisBusy, setAnalysisBusy] = useState(false);
   const [showChanges, setShowChanges] = useState(true);
+  const [forecast, setForecast] = useState<Forecast | null>(null);
+  const [weatherBusy, setWeatherBusy] = useState(false);
+  const [hourIdx, setHourIdx] = useState(0);
   const [pinName, setPinName] = useState("");
   const [autoCaption, setAutoCaption] = useState(false);
   const [monitorBusy, setMonitorBusy] = useState(false);
@@ -212,7 +229,7 @@ export default function Explore() {
       setCredit([data.attribution?.imagery, data.attribution?.geocoding].filter(Boolean).join(" · "));
       await draw(all);
       const pt: Point | null = data.point ?? (append ? point : null);
-      if (!append) { setPoint(pt); clearOverlay(); clearChange(); setChip(null); setCaption(null); setComparison(null); setAnalysis(null); setBeforeItem(null); setAfterItem(null); }
+      if (!append) { setPoint(pt); clearOverlay(); clearChange(); setChip(null); setCaption(null); setComparison(null); setAnalysis(null); setBeforeItem(null); setAfterItem(null); setForecast(null); }
       const label = pinLabel ?? data.place?.name ?? (pt ? `${pt.lat.toFixed(4)}, ${pt.lon.toFixed(4)}` : "");
       if (!append && pt) { setPinName(label); placePin(pt, label, true); }
       const where = pt ? ` at ${pt.lat.toFixed(4)}, ${pt.lon.toFixed(4)}` : "";
@@ -413,6 +430,24 @@ export default function Explore() {
     }
   };
 
+  const loadWeather = async () => {
+    if (!point) { setMsg("Drop a pin first: search a place or click the globe."); return; }
+    setWeatherBusy(true);
+    setMsg("Loading the weather forecast…");
+    try {
+      const res = await fetch(`/api/weather/forecast?lat=${point.lat.toFixed(4)}&lon=${point.lon.toFixed(4)}&days=3`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setMsg(data?.error?.message ?? `Could not load the forecast (${res.status})`); return; }
+      setForecast(data);
+      setHourIdx(data.now_index ?? 0);
+      setMsg("Forecast ready.");
+    } catch {
+      setMsg("Can't reach the server. Is the backend running on port 3000?");
+    } finally {
+      setWeatherBusy(false);
+    }
+  };
+
   const monitorHere = async () => {
     const token = getToken();
     if (!point) { setMsg("Drop a pin first: search a place or click the globe."); return; }
@@ -495,6 +530,9 @@ export default function Explore() {
             <input type="checkbox" checked={autoCaption} onChange={(e) => setAutoCaption(e.target.checked)} />
             also describe new scenes
           </label>
+          <button type="button" disabled={weatherBusy} onClick={() => void loadWeather()} className="rounded-md border border-white/10 px-2 py-1 text-xs text-[#8daaff] disabled:text-muted-foreground">
+            {weatherBusy ? "Loading…" : "Weather forecast"}
+          </button>
           <button type="button" disabled={analysisBusy || !beforeItem || !afterItem} onClick={() => void analyzeChange()} className="rounded-md border border-white/10 px-2 py-1 text-xs text-[#8daaff] disabled:text-muted-foreground">
             {analysisBusy ? "Analysing…" : "Analyse change"}
           </button>
@@ -503,6 +541,57 @@ export default function Explore() {
           </button>
         </div>
       )}
+      {forecast && (() => {
+        const h = forecast.hourly;
+        const i = Math.min(hourIdx, h.time.length - 1);
+        const show = (v: Num, unit = "") => (v == null ? "n/a" : `${v}${unit}`);
+        const data = h.time.map((t, k) => ({ k, label: `${t.slice(5, 10)} ${t.slice(11, 16)}`, temp: h.temperature_c[k], rain: h.precipitation_mm[k], cloud: h.cloud_cover_pct[k] }));
+        return (
+          <div className="space-y-3 rounded-2xl border border-white/10 p-3">
+            <div className="flex items-center justify-between text-sm">
+              <span>Weather at the pin · {forecast.location.timezone ?? "local time"} time</span>
+              <button type="button" onClick={() => setForecast(null)} className="text-xs text-muted-foreground hover:text-white">Close</button>
+            </div>
+            <div className="space-y-1 text-sm">
+              <p className="font-medium">{h.time[i].replace("T", " ")} · {h.summary[i]}</p>
+              <p className="text-xs text-muted-foreground">
+                Temperature {show(h.temperature_c[i], " °C")} · Rain {show(h.precipitation_mm[i], " mm")} ({show(h.precipitation_probability_pct[i], "%")} chance) · Cloud cover {show(h.cloud_cover_pct[i], "%")} · Wind {show(h.wind_speed_kmh[i], " km/h")} (gusts {show(h.wind_gust_kmh[i], " km/h")}) · Humidity {show(h.humidity_pct[i], "%")}
+              </p>
+            </div>
+            <input type="range" min={0} max={h.time.length - 1} value={i} onChange={(e) => setHourIdx(Number(e.target.value))} className="w-full" aria-label="Forecast hour" />
+            <div className="h-44 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                  <XAxis dataKey="k" interval={11} tickFormatter={(k: number) => data[k]?.label ?? ""} tick={{ fontSize: 10, fill: "#9aa8c7" }} />
+                  <YAxis yAxisId="t" width={28} tick={{ fontSize: 10, fill: "#9aa8c7" }} />
+                  <YAxis yAxisId="c" orientation="right" width={28} domain={[0, 100]} tick={{ fontSize: 10, fill: "#9aa8c7" }} />
+                  <YAxis yAxisId="r" hide domain={[0, "auto"]} />
+                  <Tooltip labelFormatter={(k: number) => data[k]?.label ?? ""} contentStyle={{ background: "#0b1224", border: "1px solid #24304f", fontSize: 12 }} />
+                  <Bar yAxisId="r" dataKey="rain" name="Rain (mm)" fill="#4f7cff" />
+                  <Line yAxisId="c" dataKey="cloud" name="Cloud cover (%)" stroke="#9aa8c7" strokeDasharray="4 3" dot={false} />
+                  <Line yAxisId="t" dataKey="temp" name="Temperature (°C)" stroke="#ffb86b" dot={false} strokeWidth={2} />
+                  <ReferenceLine yAxisId="t" x={i} stroke="#ffffff" strokeDasharray="3 3" />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+            <p className="text-xs text-muted-foreground">Orange line: temperature (left scale). Grey dashed line: cloud cover (right scale, 0 to 100%). Blue bars: rain.</p>
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              {forecast.daily.date.map((d, k) => (
+                <div key={d} className="rounded-lg border border-white/10 p-2">
+                  <p className="font-medium">{d}</p>
+                  <p className="text-muted-foreground">{forecast.daily.summary[k]}</p>
+                  <p>{show(forecast.daily.tmax_c[k], "°")} / {show(forecast.daily.tmin_c[k], "°")}</p>
+                  <p className="text-muted-foreground">Rain {show(forecast.daily.precipitation_mm[k], " mm")}</p>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Model forecast for roughly an 11 km area around the pin, not a measurement. Cloud cover helps judge whether a new satellite scene will be clear.{" "}
+              <a href={forecast.source.url} target="_blank" rel="noreferrer" className="text-[#8daaff] underline">{forecast.source.attribution}</a> (CC BY 4.0).
+            </p>
+          </div>
+        );
+      })()}
       {items.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="text-muted-foreground">Preview area around the pin:</span>
