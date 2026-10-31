@@ -1,0 +1,77 @@
+/* Styles for the weather widget (weather.tsx). Plain CSS so it works with any Tailwind setup. */
+
+.mu-surface { background: #232427; color: #f3f4f6; border: 1px solid rgba(255,255,255,.07); box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 24px 48px rgba(0,0,0,.5); box-sizing: border-box; }
+.mu-surface[data-radius="card"] { border-radius: 22px; }
+.mu-surface[data-radius="tile"] { border-radius: 16px; }
+.mu-well { position: relative; background: #17181a; box-shadow: inset 0 2px 6px rgba(0,0,0,.65), inset 0 0 0 1px rgba(255,255,255,.03); }
+.mu-led { display: inline-block; width: 6px; height: 6px; border-radius: 9999px; background: #4b4d52; }
+.mu-led[data-kind="live"] { background: #5ee6a0; box-shadow: 0 0 6px rgba(94,230,160,.8); }
+.mu-rule { background: rgba(255,255,255,.09); }
+.mu-rule[data-orientation="horizontal"] { height: 1px; width: auto; }
+.mu-rule[data-orientation="vertical"] { width: 1px; align-self: stretch; }
+
+/* sizes */
+.mu-weather { box-sizing: border-box; overflow: hidden; }
+.w-weather-width { width: 400px; max-width: 100%; }
+.h-weather-height { min-height: 560px; }
+.p-weather-pad { padding: 16px; }
+.gap-weather-gap { gap: 8px; }
+.size-weather-tile-size { width: 180px; height: 180px; }
+.p-weather-tile-pad { padding: 8px; }
+.px-weather-header-inset { padding-left: 8px; padding-right: 8px; }
+.mx-weather-header-inset { margin-left: 8px; margin-right: 8px; }
+.pt-weather-header-top { padding-top: 6px; }
+.gap-weather-header-gap { gap: 2px; }
+.gap-weather-header-led-gap { gap: 6px; }
+.h-weather-header-height { height: 22px; }
+.h-weather-screen-height { height: 224px; }
+.h-weather-tile-screen { height: 100%; }
+.rounded-weather-screen-radius { border-radius: 14px; }
+.inset-x-weather-screen-inset { left: 12px; right: 12px; }
+.inset-x-weather-tile-inset { left: 8px; right: 8px; }
+.bottom-weather-screen-foot { bottom: 8px; }
+.pb-weather-screen-lift { padding-bottom: 6px; }
+.pb-weather-tile-lift { padding-bottom: 2px; }
+.h-weather-hour-height { height: 64px; }
+.gap-weather-hour-gap { gap: 3px; }
+.size-weather-hour-glyph { width: 21px; height: 21px; }
+.gap-weather-week-gap { gap: 2px; }
+.gap-weather-week-col { gap: 8px; }
+.h-weather-week-row { height: 18px; }
+.w-weather-week-day { width: 50px; flex: none; }
+.size-weather-week-glyph { width: 16px; height: 16px; flex: none; }
+.w-weather-week-value { width: 30px; flex: none; }
+.w-weather-week-bar { width: 168px; flex: none; }
+.h-weather-week-bar-height { height: 6px; }
+.mu-weather-glyph { shape-rendering: crispEdges; }
+
+/* type */
+.type-display { font: 600 20px/1.1 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing: -.01em; }
+.type-meta { font: 400 13px/1.3 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+.type-readout { font: 400 11px/1.3 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: .02em; }
+.type-pixel { font: 700 54px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: -.05em; text-shadow: 0 2px 0 rgba(0,0,0,.35); }
+.type-content { font: 500 16px/1.2 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+.type-label { font: 500 10px/1.2 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: .12em; text-transform: uppercase; }
+.engraved { color: #8d9096; text-shadow: 0 1px 0 rgba(0,0,0,.4); }
+.type-weather-hour { font: 700 22px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: -.04em; }
+.type-ui { font: 500 14px/1.2 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+.type-title { font: 600 14px/1.2 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+.text-ink { color: #f3f4f6; }
+.text-ink2 { color: #9ea0a6; }
+.fill-ink { fill: #f3f4f6; }
+
+/* inks */
+.fill-weather-ink-off { fill: #2b2c30; }
+.fill-weather-ink-sun { fill: #e9b44c; }
+.fill-weather-ink-star { fill: #d9dae0; }
+.fill-weather-ink-moon { fill: #e8e4d8; }
+.fill-weather-ink-rain { fill: #7f9bff; }
+.fill-weather-ink-snow { fill: #e6ecff; }
+.fill-weather-ink-cloud { fill: #8e9096; }
+.fill-weather-ink-cloud-dark { fill: #666870; }
+.fill-weather-ink-hill { fill: #5b5d63; }
+.fill-weather-ink-hz { fill: #484a50; }
+.opacity-weather-ink-glow-opacity { opacity: .55; }
+.opacity-weather-ink-moon-dark-opacity { opacity: .22; }
+.opacity-weather-ink-heat-opacity { opacity: .45; }
+.opacity-weather-ink-fog-opacity { opacity: .35; }

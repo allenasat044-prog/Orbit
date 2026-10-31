@@ -4,8 +4,16 @@ import {
   Cartesian2, Cartesian3, Cartographic, LabelStyle, ScreenSpaceEventHandler, ScreenSpaceEventType, Math as CesiumMath, SingleTileImageryProvider,
 } from "cesium";
 import { ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, Tooltip, ReferenceLine } from "recharts";
+import { useNavigate } from "react-router-dom";
+import {
+  Search, LayoutDashboard, FileText, CloudSun, Image as ImageIcon, Sparkles, GitCompare, History, Maximize, MapPin,
+  RefreshCw, Grid3x3, HelpCircle, LogOut, LogIn, Hash, Bot, PanelLeftClose, PanelLeftOpen, Eye,
+} from "lucide-react";
 import SearchGroup from "@/components/ui/v-group-18";
-import { getToken } from "@/lib/auth";
+import { SidebarNav, type NavGroupData, type NavItemData } from "@/components/ui/dashboard-sidebar";
+import { WeatherPopup } from "@/components/ui/weather-popup";
+import { buildWeatherProps } from "@/lib/weather-map";
+import { getToken, logout } from "@/lib/auth";
 
 type Geometry = { type: string; coordinates: unknown };
 type Item = {
@@ -53,9 +61,9 @@ type Forecast = {
   now_index: number | null;
   hourly: {
     time: string[]; temperature_c: Num[]; humidity_pct: Num[]; precipitation_probability_pct: Num[]; precipitation_mm: Num[];
-    cloud_cover_pct: Num[]; wind_speed_kmh: Num[]; wind_gust_kmh: Num[]; summary: string[];
+    cloud_cover_pct: Num[]; wind_speed_kmh: Num[]; wind_gust_kmh: Num[]; weather_code: Num[]; summary: string[];
   };
-  daily: { date: string[]; tmax_c: Num[]; tmin_c: Num[]; precipitation_mm: Num[]; summary: string[] };
+  daily: { date: string[]; tmax_c: Num[]; tmin_c: Num[]; precipitation_mm: Num[]; weather_code: Num[]; summary: string[] };
   source: { attribution: string; url: string };
   cached: boolean;
   fetched_at: string;
@@ -114,6 +122,14 @@ export default function Explore() {
   const [forecast, setForecast] = useState<Forecast | null>(null);
   const [weatherBusy, setWeatherBusy] = useState(false);
   const [hourIdx, setHourIdx] = useState(0);
+  const navigate = useNavigate();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeItem, setActiveItem] = useState<Item | null>(null);
+  const [regionList, setRegionList] = useState<{ id: string; name: string; lat: number; lon: number }[]>([]);
+  const [weatherOpen, setWeatherOpen] = useState(false);
+  const [popupForecast, setPopupForecast] = useState<{ key: string; data: Forecast } | null>(null);
+  const [popupLoading, setPopupLoading] = useState(false);
+  const [popupError, setPopupError] = useState<string | null>(null);
   const [pinName, setPinName] = useState("");
   const [autoCaption, setAutoCaption] = useState(false);
   const [monitorBusy, setMonitorBusy] = useState(false);
@@ -229,7 +245,7 @@ export default function Explore() {
       setCredit([data.attribution?.imagery, data.attribution?.geocoding].filter(Boolean).join(" · "));
       await draw(all);
       const pt: Point | null = data.point ?? (append ? point : null);
-      if (!append) { setPoint(pt); clearOverlay(); clearChange(); setChip(null); setCaption(null); setComparison(null); setAnalysis(null); setBeforeItem(null); setAfterItem(null); setForecast(null); }
+      if (!append) { setPoint(pt); clearOverlay(); clearChange(); setChip(null); setCaption(null); setComparison(null); setAnalysis(null); setBeforeItem(null); setAfterItem(null); setForecast(null); setActiveItem(null); }
       const label = pinLabel ?? data.place?.name ?? (pt ? `${pt.lat.toFixed(4)}, ${pt.lon.toFixed(4)}` : "");
       if (!append && pt) { setPinName(label); placePin(pt, label, true); }
       const where = pt ? ` at ${pt.lat.toFixed(4)}, ${pt.lon.toFixed(4)}` : "";
@@ -448,6 +464,85 @@ export default function Explore() {
     }
   };
 
+  const openWeatherPopup = async () => {
+    if (!point) { setMsg("Drop a pin first: search a place or click the globe."); return; }
+    setWeatherOpen(true);
+    const key = `${point.lat.toFixed(2)},${point.lon.toFixed(2)}`;
+    if (popupForecast?.key === key) return;
+    setPopupLoading(true);
+    setPopupError(null);
+    try {
+      const res = await fetch(`/api/weather/forecast?lat=${point.lat.toFixed(4)}&lon=${point.lon.toFixed(4)}&days=7`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setPopupError(data?.error?.message ?? `Could not load the forecast (${res.status})`); return; }
+      setPopupForecast({ key, data });
+    } catch {
+      setPopupError("Can't reach the server. Is the backend running on port 3000?");
+    } finally {
+      setPopupLoading(false);
+    }
+  };
+
+  const loadRegions = async () => {
+    const token = getToken();
+    if (!token) { setRegionList([]); return; }
+    try {
+      const res = await fetch("/api/regions", { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) setRegionList((data.items ?? []).map((r: { id: string; name: string; location: { lat: number; lon: number } }) => ({ id: r.id, name: r.name, lat: r.location.lat, lon: r.location.lon })));
+    } catch {
+      setRegionList([]);
+    }
+  };
+
+  const goToRegion = (id: string) => {
+    const r = regionList.find((x) => x.id === id);
+    if (!r) return;
+    const params = new URLSearchParams({ lat: r.lat.toFixed(6), lon: r.lon.toFixed(6), cloud_max: "30" });
+    void run(`/api/imagery/search?${params}`, false, r.name);
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        document.querySelector<HTMLInputElement>("[data-explore-search] input")?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const pickScene = (): Item | null => {
+    const target = activeItem ?? items[0] ?? null;
+    if (!target) setMsg("Search for a place first, then pick a scene.");
+    return target;
+  };
+
+  const onSidebarSelect = (id: string) => {
+    if (id.startsWith("zoom-")) { setZoomPx(Number(id.slice(5))); return; }
+    switch (id) {
+      case "search": document.querySelector<HTMLInputElement>("[data-explore-search] input")?.focus(); break;
+      case "dashboard": navigate("/dashboard"); break;
+      case "captions": navigate("/captions"); break;
+      case "faq": navigate("/faqs"); break;
+      case "login": navigate("/login"); break;
+      case "logout": logout(); navigate("/login"); break;
+      case "weather": void openWeatherPopup(); break;
+      case "preview": { const t = pickScene(); if (t) void previewChip(t); break; }
+      case "describe": if (!chip) setMsg("Press Preview on a scene first."); else void describeChip(); break;
+      case "compare": if (!chip) setMsg("Press Preview on a scene first."); else void compareModels(); break;
+      case "set-before": { const t = pickScene(); if (t) { setBeforeItem(t); setMsg(`Before: ${t.acquired_at.slice(0, 10)}`); } break; }
+      case "set-after": { const t = pickScene(); if (t) { setAfterItem(t); setMsg(`After: ${t.acquired_at.slice(0, 10)}`); } break; }
+      case "analyse": void analyzeChange(); break;
+      case "monitor": void monitorHere(); break;
+      case "autodescribe": setAutoCaption((v) => !v); break;
+      case "update": void runUpdate(); break;
+      case "pixels": setSmooth((v) => !v); break;
+      default: break;
+    }
+  };
+
   const monitorHere = async () => {
     const token = getToken();
     if (!point) { setMsg("Drop a pin first: search a place or click the globe."); return; }
@@ -517,9 +612,68 @@ export default function Explore() {
     }
   };
 
+  const token = getToken();
+  const changeCount = (beforeItem ? 1 : 0) + (afterItem ? 1 : 0);
+  const sameScene = (a: Item | null, b: Item | null) => !!a && !!b && a.external_id === b.external_id;
+  const navGroups: NavGroupData[] = [
+    { items: [
+      { id: "search", title: "Search", icon: Search, shortcut: "⌘K" },
+      { id: "dashboard", title: "Dashboard", icon: LayoutDashboard },
+      { id: "captions", title: "Captions", icon: FileText },
+    ] },
+    { heading: "Explore", items: [
+      { id: "weather", title: "Weather forecast", icon: CloudSun, dim: !point },
+      { id: "preview", title: "Preview scene", icon: ImageIcon, badge: items.length || undefined, dim: items.length === 0 },
+      { id: "describe", title: "Describe this image", icon: Sparkles, dim: !chip },
+      { id: "compare", title: "Compare models", icon: GitCompare, dim: !chip },
+      { id: "change", title: "Historical change", icon: History, badge: changeCount ? `${changeCount}/2` : undefined, children: [
+        { id: "set-before", title: "Set scene as Before", icon: Hash, active: sameScene(beforeItem, activeItem ?? items[0] ?? null) },
+        { id: "set-after", title: "Set scene as After", icon: Hash, active: sameScene(afterItem, activeItem ?? items[0] ?? null) },
+        { id: "analyse", title: "Analyse change", icon: Hash, dim: !(beforeItem && afterItem) },
+      ] },
+      { id: "area", title: "Preview area", icon: Maximize, defaultOpen: true, children: ZOOMS.map((z) => ({ id: `zoom-${z.px}`, title: `${z.name} · ${z.km}`, icon: Hash, active: zoomPx === z.px })) },
+    ] },
+    { heading: "Monitoring", items: [
+      { id: "monitor", title: "Monitor this location", icon: MapPin, dim: !point },
+      { id: "autodescribe", title: "Describe new scenes", icon: Bot, badge: autoCaption ? "On" : "Off" },
+      { id: "update", title: "Check for new scenes", icon: RefreshCw },
+    ] },
+  ];
+  const bottomItems: NavItemData[] = [
+    { id: "pixels", title: smooth ? "Show pixels" : "Smooth image", icon: Grid3x3, dim: !chip },
+    { id: "faq", title: "FAQ", icon: HelpCircle },
+    token ? { id: "logout", title: "Log out", icon: LogOut } : { id: "login", title: "Log in", icon: LogIn },
+  ];
+  const widget = popupForecast && point && popupForecast.key === `${point.lat.toFixed(2)},${point.lon.toFixed(2)}` ? buildWeatherProps(popupForecast.data, pinName || "Your pin") : null;
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-4"><SearchGroup onSearch={onSearch} /><span className="text-sm text-muted-foreground">{msg}</span></div>
+    <div className="flex items-start gap-4">
+      {sidebarOpen && (
+        <aside className="sticky top-4 hidden h-[calc(100vh-2rem)] w-[260px] shrink-0 overflow-hidden rounded-xl border border-border/50 bg-card/50 shadow-sm ring-1 ring-white/5 lg:block" aria-label="Explore tools">
+          <SidebarNav
+            className="border-none bg-transparent"
+            groups={navGroups}
+            bottomItems={bottomItems}
+            onSelect={onSidebarSelect}
+            workspace={{
+              title: "Orbit EO",
+              subtitle: pinName ? `Pin: ${pinName}` : "Satellite explorer",
+              options: regionList.map((r) => ({ id: r.id, label: r.name })),
+              emptyText: token ? "No monitored locations yet" : "Log in to see monitored locations",
+              onOpen: () => void loadRegions(),
+              onPick: goToRegion,
+              action: { label: "Monitor this location", onClick: () => void monitorHere() },
+            }}
+          />
+        </aside>
+      )}
+      <div className="min-w-0 flex-1 space-y-4">
+      <div className="flex items-center gap-4" data-explore-search>
+        <button type="button" onClick={() => setSidebarOpen((v) => !v)} aria-label={sidebarOpen ? "Hide tools panel" : "Show tools panel"} className="hidden rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground lg:inline-flex">
+          {sidebarOpen ? <PanelLeftClose className="h-[18px] w-[18px]" strokeWidth={1.5} /> : <PanelLeftOpen className="h-[18px] w-[18px]" strokeWidth={1.5} />}
+        </button>
+        <SearchGroup onSearch={onSearch} /><span className="text-sm text-muted-foreground">{msg}</span>
+      </div>
       <div ref={el} className="h-[70vh] w-full overflow-hidden rounded-2xl border border-white/10" />
       {point && (
         <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -530,8 +684,11 @@ export default function Explore() {
             <input type="checkbox" checked={autoCaption} onChange={(e) => setAutoCaption(e.target.checked)} />
             also describe new scenes
           </label>
+          <button type="button" onClick={() => void openWeatherPopup()} className="rounded-md border border-white/10 px-2 py-1 text-xs text-[#8daaff]">
+            Weather widget
+          </button>
           <button type="button" disabled={weatherBusy} onClick={() => void loadWeather()} className="rounded-md border border-white/10 px-2 py-1 text-xs text-[#8daaff] disabled:text-muted-foreground">
-            {weatherBusy ? "Loading…" : "Weather forecast"}
+            {weatherBusy ? "Loading…" : "Weather chart"}
           </button>
           <button type="button" disabled={analysisBusy || !beforeItem || !afterItem} onClick={() => void analyzeChange()} className="rounded-md border border-white/10 px-2 py-1 text-xs text-[#8daaff] disabled:text-muted-foreground">
             {analysisBusy ? "Analysing…" : "Analyse change"}
@@ -610,8 +767,8 @@ export default function Explore() {
       {items.length > 0 && (
         <ul className="max-h-60 space-y-1 overflow-auto text-sm">
           {items.map((i) => (
-            <li key={i.external_id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 px-3 py-2">
-              <button type="button" className="text-left hover:text-[#8daaff]" onClick={() => focus(i)}>
+            <li key={i.external_id} className={`flex items-center justify-between gap-3 rounded-lg border px-3 py-2 ${activeItem?.external_id === i.external_id ? "border-[#8daaff]/50" : "border-white/10"}`}>
+              <button type="button" className="text-left hover:text-[#8daaff]" onClick={() => { focus(i); setActiveItem(i); }}>
                 {new Date(i.acquired_at).toISOString().slice(0, 10)} · {i.platform ?? i.collection} · {i.cloud_cover != null ? `${i.cloud_cover.toFixed(0)}% cloud` : "no cloud data"}{i.gsd ? ` · ${i.gsd} m` : ""}
               </button>
               <span className="flex items-center gap-3">
@@ -731,6 +888,15 @@ export default function Explore() {
       )}
       {next && <button type="button" disabled={busy} onClick={loadMore} className="text-sm text-[#8daaff] disabled:text-muted-foreground">Load more</button>}
       {credit && <p className="text-xs text-muted-foreground">{credit}</p>}
+      <WeatherPopup
+        open={weatherOpen}
+        onClose={() => setWeatherOpen(false)}
+        loading={popupLoading}
+        error={popupError}
+        widget={widget}
+        attribution={popupForecast ? { text: popupForecast.data.source.attribution, url: popupForecast.data.source.url } : null}
+      />
+      </div>
     </div>
   );
 }
