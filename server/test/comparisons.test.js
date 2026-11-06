@@ -146,7 +146,7 @@ test("GET /comparisons/:id serves the saved comparison with its caveat, and vali
   const bad = await fetch(`${s.base}/api/comparisons/nope`);
   s.close();
   assert.equal(ok.comparison.results[0].alignment, 0.3);
-  assert.equal(ok.comparison.image_url, `/api/chips/${CHIP}/image`);
+  assert.equal(ok.comparison.image_url, `/api/chips/${CHIP}/image?v=2`);
   assert.equal(ok.comparison.ai_generated, true);
   assert.match(ok.comparison.note, /not a measure of truth/);
   assert.equal("created_by" in ok.comparison, false);

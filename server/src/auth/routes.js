@@ -6,6 +6,7 @@ import { hashPassword, verifyPassword, DUMMY_HASH } from "./password.js";
 import { signToken } from "./tokens.js";
 import { requireAuth } from "./middleware.js";
 import { EmailTakenError } from "./usersRepo.js";
+import { createOAuthRouter } from "./oauth.js";
 
 const email = z
   .string({ required_error: "Enter a valid email address." })
@@ -39,7 +40,7 @@ function parse(schema, body) {
 
 const publicUser = (u) => ({ id: u.id, name: u.name, email: u.email, role: u.role, created_at: u.created_at });
 
-export function createAuthRouter({ config, users }) {
+export function createAuthRouter({ config, users, oauthFetch }) {
   const router = express.Router();
 
   router.use(
@@ -51,6 +52,8 @@ export function createAuthRouter({ config, users }) {
       handler: (_req, res) => sendError(res, 429, "rate_limited", "Too many attempts. Try again later."),
     }),
   );
+
+  router.use("/oauth", createOAuthRouter({ config, users, fetchFn: oauthFetch }));
 
   router.post(
     "/signup",

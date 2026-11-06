@@ -3,7 +3,7 @@ import { promptKey } from "./repo.js";
 
 export const DEFAULT_MODEL_ID = "smolvlm-instruct";
 
-export function createCaptionHandler({ chips, captions, mlCaption }) {
+export function createCaptionHandler({ chips, captions, mlCaption, storage }) {
   return async function generateCaption({ chip_id, model_id = DEFAULT_MODEL_ID, prompt = null }, { userId } = {}) {
     const chip = await chips.findById(chip_id);
     if (!chip) throw new JobError("chip_not_found", "Preview image not found.");
@@ -11,6 +11,9 @@ export function createCaptionHandler({ chips, captions, mlCaption }) {
     const existing = await captions.find(chip.id, model_id, key);
     if (existing) return { caption_id: existing.id, reused: true };
 
+    if (storage && !storage.exists(chip.storage_path)) {
+      throw new JobError("preview_missing", "The saved preview image is missing on this computer. Open Explore and press “Refresh image” to rebuild it, then describe it again.");
+    }
     let r;
     try {
       r = await mlCaption({ image_path: chip.storage_path, model_id, prompt: prompt ?? undefined });

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { HttpError, asyncHandler, sendError } from "../errors.js";
 import { requireAuth } from "../auth/middleware.js";
 import { publicJob } from "../imagery/chipRoutes.js";
+import { chipImageUrl } from "../imagery/chipUrls.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -16,7 +17,7 @@ export const publicComparison = (c) => ({
   id: c.id,
   chip_id: c.chip_id,
   created_at: c.created_at,
-  image_url: `/api/chips/${c.chip_id}/image`,
+  image_url: chipImageUrl(c.chip_id),
   results: c.results,
   scene_tags: c.scene_tags,
   scene_model: c.scene_model,

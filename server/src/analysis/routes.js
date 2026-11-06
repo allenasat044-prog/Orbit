@@ -5,6 +5,7 @@ import { HttpError, asyncHandler, sendError } from "../errors.js";
 import { requireAuth } from "../auth/middleware.js";
 import { publicJob } from "../imagery/chipRoutes.js";
 import { pointInGeometry } from "../imagery/geo.js";
+import { chipImageUrl, chipDisplayUrl } from "../imagery/chipUrls.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -22,8 +23,8 @@ const side = (a, prefix) => ({
   acquired_at: a[`${prefix}_acquired_at`],
   platform: a[`${prefix}_platform`],
   cloud_cover: a[`${prefix}_cloud`],
-  image_url: `/api/chips/${a[`${prefix}_chip_id`]}/image`,
-  display_url: `/api/chips/${a[`${prefix}_chip_id`]}/image?variant=display`,
+  image_url: chipImageUrl(a[`${prefix}_chip_id`]),
+  display_url: chipDisplayUrl(a[`${prefix}_chip_id`]),
 });
 
 export const publicAnalysis = (a) => {
@@ -67,6 +68,15 @@ export function createAnalysisRouter({ config, acquisitions, analyses, runner, s
       }
       const job = await runner.enqueue("analyze_change", { before_id, after_id, lat, lon, size_px }, req.auth.userId);
       res.status(202).json({ job: publicJob(job) });
+    }),
+  );
+
+  // My past analyses, newest first (the "history" on the Analysis page).
+  router.get(
+    "/analysis",
+    auth,
+    asyncHandler(async (req, res) => {
+      res.json({ items: (await analyses.listForUser(req.auth.userId, 30)).map(publicAnalysis) });
     }),
   );
 

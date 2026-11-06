@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/accordion";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { Panel } from "@/components/ui/spotlight-card";
 
 // ✏️ Put each developer's GitHub username in `github`. Name and role are labels you control.
 const TEAM = [
@@ -72,11 +73,12 @@ function TeamCard({ member }: { member: (typeof TEAM)[number] }) {
   }, [member.github]);
 
   return (
-    <div
+    <Panel
       key={member.github}
-      className="animate-in fade-in-0 slide-in-from-bottom-2 duration-300 mx-auto flex w-full max-w-3xl flex-col gap-6 rounded-3xl border border-white/10 bg-white/[0.02] p-8 sm:flex-row sm:items-center"
+      radius={24}
+      className="animate-in fade-in-0 slide-in-from-bottom-2 duration-300 mx-auto flex w-full max-w-3xl flex-col gap-6 rounded-3xl p-8 sm:flex-row sm:items-center"
     >
-      <Avatar className="size-[88px] shrink-0 border border-white/10">
+      <Avatar className="size-[88px] shrink-0 border border-line">
         <AvatarImage src={gh?.avatar_url ?? `https://github.com/${member.github}.png?size=200`} alt={member.name} />
         <AvatarFallback className="text-2xl">{member.name.slice(0, 1)}</AvatarFallback>
       </Avatar>
@@ -96,14 +98,14 @@ function TeamCard({ member }: { member: (typeof TEAM)[number] }) {
           href={`https://github.com/${member.github}`}
           target="_blank"
           rel="noreferrer"
-          className="mt-4 inline-flex w-fit items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-black transition-opacity hover:opacity-90"
+          className="mt-4 inline-flex w-fit items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-sm font-medium text-background transition-opacity hover:opacity-90"
         >
           <Github className="size-4" />
           Open GitHub
           <ExternalLink className="size-3.5" />
         </a>
       </div>
-    </div>
+    </Panel>
   );
 }
 
@@ -115,7 +117,7 @@ export default function Faqs02() {
       <section id="faqs" className="mx-auto max-w-6xl px-6 pb-10 pt-10 sm:px-10 sm:pt-16">
         <div className="grid gap-12 lg:grid-cols-[1fr_1.45fr] lg:items-start">
           <div className="flex flex-col gap-6 lg:sticky lg:top-24">
-            <span className="inline-flex w-fit items-center rounded-full border border-white/10 bg-white/[0.03] px-3.5 py-1 text-xs text-muted-foreground">
+            <span className="inline-flex w-fit items-center rounded-full border border-line bg-surface px-3.5 py-1 text-xs text-muted-foreground">
               FAQ
             </span>
             <h1
@@ -128,9 +130,9 @@ export default function Faqs02() {
               Everything about how Orbit EO finds satellite imagery, describes it and keeps watch over the places you care about.
             </p>
 
-            <div className="mt-2 flex max-w-md flex-col gap-4 rounded-3xl border border-white/10 bg-white/[0.02] p-4">
+            <Panel radius={24} className="mt-2 flex max-w-md flex-col gap-4 rounded-3xl p-4">
               <div className="flex items-center gap-3.5 px-1 pt-1">
-                <span className="grid size-12 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/[0.05] text-foreground">
+                <span className="grid size-12 shrink-0 place-items-center rounded-xl border border-line bg-surface text-foreground">
                   <Users className="size-5" />
                 </span>
                 <div className="flex flex-col leading-snug">
@@ -140,21 +142,17 @@ export default function Faqs02() {
               </div>
               <a
                 href="#team"
-                className="grid h-11 place-items-center rounded-xl bg-white/[0.07] text-sm font-medium text-foreground transition-colors hover:bg-white/[0.12]"
+                className="grid h-11 place-items-center rounded-xl bg-wash-strong text-sm font-medium text-foreground transition-colors hover:bg-line-strong"
               >
                 Meet the team on GitHub
               </a>
-            </div>
+            </Panel>
           </div>
 
-          <Accordion
-            type="single"
-            collapsible
-            defaultValue="item-0"
-            className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.02] px-7"
-          >
+          <Panel radius={24} className="rounded-3xl px-7 py-0">
+          <Accordion type="single" collapsible defaultValue="item-0">
             {faqs.map((f, i) => (
-              <AccordionItem key={f.q} value={`item-${i}`} className="border-white/10 last:border-b-0">
+              <AccordionItem key={f.q} value={`item-${i}`} className="border-line last:border-b-0">
                 <AccordionTrigger className="py-5 text-[17px] font-normal text-foreground hover:no-underline">
                   {f.q}
                 </AccordionTrigger>
@@ -162,11 +160,12 @@ export default function Faqs02() {
               </AccordionItem>
             ))}
           </Accordion>
+          </Panel>
         </div>
       </section>
 
       <section id="team" className="mx-auto max-w-6xl px-6 pb-24 pt-20 text-center sm:px-10">
-        <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.03] px-3.5 py-1 text-xs text-muted-foreground">
+        <span className="inline-flex items-center rounded-full border border-line bg-surface px-3.5 py-1 text-xs text-muted-foreground">
           Our group
         </span>
         <h2
@@ -176,14 +175,14 @@ export default function Faqs02() {
           Find us on GitHub
         </h2>
 
-        <div className="mx-auto mb-6 flex w-fit max-w-full flex-wrap justify-center gap-1 rounded-2xl border border-white/10 bg-white/[0.02] p-1.5">
+        <div className="mx-auto mb-6 flex w-fit max-w-full flex-wrap justify-center gap-1 rounded-2xl border border-line bg-surface p-1.5">
           {TEAM.map((m, i) => (
             <button
               key={m.github}
               onClick={() => setActive(i)}
               className={cn(
                 "max-w-[11rem] truncate rounded-xl px-5 py-2.5 text-sm transition-colors",
-                i === active ? "bg-white text-black" : "text-muted-foreground hover:text-foreground",
+                i === active ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground",
               )}
             >
               {m.name}

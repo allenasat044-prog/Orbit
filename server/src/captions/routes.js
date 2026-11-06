@@ -6,6 +6,7 @@ import { requireAuth } from "../auth/middleware.js";
 import { publicJob } from "../imagery/chipRoutes.js";
 import { promptKey } from "./repo.js";
 import { DEFAULT_MODEL_ID } from "./job.js";
+import { chipImageUrl } from "../imagery/chipUrls.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -24,7 +25,7 @@ export const publicCaption = (c) => ({
   prompt: c.prompt,
   latency_ms: c.latency_ms,
   created_at: c.created_at,
-  image_url: `/api/chips/${c.chip_id}/image`,
+  image_url: chipImageUrl(c.chip_id),
   ai_generated: true,
 });
 

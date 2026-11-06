@@ -35,7 +35,7 @@ function kit(over = {}) {
     },
   };
   const mlCap = over.mlCaption ?? (async (body) => { calls.push(body); return ML; });
-  return { chips, captions, rows, calls, handler: createCaptionHandler({ chips, captions, mlCaption: mlCap }) };
+  return { chips, captions, rows, calls, handler: createCaptionHandler({ chips, captions, mlCaption: mlCap, storage: over.storage }) };
 }
 
 test("caption job sends the chip image to the model and stores full provenance", async () => {
@@ -143,7 +143,7 @@ test("POST /captions returns the stored caption instantly when it already exists
   assert.equal(got.caption.caption, ML.text);
   assert.equal(got.caption.ai_generated, true);
   assert.deepEqual(got.caption.model, { id: "smolvlm-instruct", checkpoint: ML.checkpoint, revision: "abc", device: "mps", dtype: "bfloat16" });
-  assert.equal(got.caption.image_url, `/api/chips/${CHIP}/image`);
+  assert.equal(got.caption.image_url, `/api/chips/${CHIP}/image?v=2`);
   assert.equal(missing.status, 404);
   assert.equal(bad.status, 400);
   assert.equal(publicCaption(got.caption && { ...got.caption, model_id: "x", checkpoint: "y", chip_id: CHIP }).model.id, "x");
@@ -224,7 +224,7 @@ test("GET /captions lists only my captions, newest first, with scene and locatio
   const first = body.items[0];
   assert.deepEqual(first.scene, { id: "S2C_X", acquired_at: "2026-10-14T05:00:00Z", platform: "sentinel-2c" });
   assert.deepEqual(first.location, { lat: 28.6, lon: 77.2 });
-  assert.equal(first.image_url, `/api/chips/${CHIP}/image`);
+  assert.equal(first.image_url, `/api/chips/${CHIP}/image?v=2`);
   assert.equal(first.ai_generated, true);
   assert.equal("created_at_raw" in first, false);
   assert.equal("created_by" in first, false);
@@ -259,4 +259,12 @@ test("DELETE /captions/:id works for the owner and admins, and hides other peopl
   s.close();
   assert.deepEqual([anon.status, other.status, missing.status, bad.status, owner.status, admin.status], [401, 404, 404, 400, 204, 204]);
   assert.deepEqual(s.removed, [uid(1), uid(1)]);
+});
+
+test("describing a preview whose image file is missing says how to fix it, and never calls the model", async () => {
+  const k = kit({ storage: { exists: () => false } });
+  await assert.rejects(() => k.handler({ chip_id: CHIP }), (e) => e.code === "preview_missing" && /Refresh image/.test(e.message) && e.retryable === false);
+  assert.equal(k.calls.length, 0);
+  const ok = kit({ storage: { exists: () => true } });
+  assert.ok((await ok.handler({ chip_id: CHIP })).caption_id);
 });

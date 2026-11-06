@@ -7,7 +7,7 @@ import { HttpError, sendError } from "./errors.js";
 import { createAuthRouter } from "./auth/routes.js";
 import { createImageryRouter } from "./imagery/routes.js";
 
-export function createApp({ config, checks, providers, users, acquisitions, geocoder, now, routers = [] }) {
+export function createApp({ config, checks, providers, users, acquisitions, geocoder, now, oauthFetch, routers = [] }) {
   const app = express();
 
   app.disable("x-powered-by");
@@ -24,7 +24,7 @@ export function createApp({ config, checks, providers, users, acquisitions, geoc
     }),
   );
 
-  if (users) app.use("/api/auth", createAuthRouter({ config, users }));
+  if (users) app.use("/api/auth", createAuthRouter({ config, users, oauthFetch }));
   if (acquisitions && geocoder) app.use("/api/imagery", createImageryRouter({ config, providers, acquisitions, geocoder, now }));
 
   app.get("/api/health", async (_req, res) => {

@@ -2,6 +2,7 @@ import * as React from "react";
 import { X } from "lucide-react";
 import "@/components/ui/weather.css";
 import { Weather, type WeatherProps } from "@/components/ui/weather";
+import { MorphingSquare } from "@/components/ui/morphing-square";
 
 export interface WeatherPopupProps {
   open: boolean;
@@ -33,7 +34,7 @@ export function WeatherPopup({ open, onClose, loading, error, widget, attributio
         <button type="button" onClick={onClose} aria-label="Close weather" className="absolute right-3 top-3 z-10 rounded-md p-1.5 text-white/60 transition-colors hover:bg-white/10 hover:text-white">
           <X className="h-[18px] w-[18px]" strokeWidth={1.5} />
         </button>
-        {loading && <div className="flex h-40 w-[360px] max-w-full items-center justify-center rounded-[22px] bg-[#232427] text-sm text-white/70">Loading the forecast…</div>}
+        {loading && <div className="flex h-40 w-[360px] max-w-full items-center justify-center rounded-[22px] bg-[#232427] text-sm text-white/70"><MorphingSquare message="Loading the forecast…" /></div>}
         {!loading && error && <div className="w-[360px] max-w-full rounded-[22px] bg-[#232427] p-6 text-sm text-white/80">{error}</div>}
         {!loading && !error && widget && <Weather {...widget} />}
         {!loading && !error && widget && attribution && (

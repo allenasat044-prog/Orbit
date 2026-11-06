@@ -12,6 +12,7 @@ export function createStorage(root) {
     root: abs,
     resolve,
     exists: (rel) => fs.existsSync(resolve(rel)),
+    size: (rel) => { try { return fs.statSync(resolve(rel)).size; } catch { return null; } },
     ensureDir: (rel) => fs.promises.mkdir(path.dirname(resolve(rel)), { recursive: true }),
     remove: (rel) => fs.promises.rm(resolve(rel), { force: true }),
   };

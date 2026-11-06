@@ -14,12 +14,18 @@ export const chipKey = (lon, lat, size) => `${lon.toFixed(5)},${lat.toFixed(5)},
 
 const extFor = (type) => (/jp2|jpeg ?2000/i.test(type ?? "") ? ".jp2" : /tiff/i.test(type ?? "") ? ".tif" : ".dat");
 
+const assetFileIsGood = (storage, asset) => {
+  const size = storage.size ? storage.size(asset.storage_path) : storage.exists(asset.storage_path) ? Number(asset.size_bytes) : null;
+  return size != null && (!Number(asset.size_bytes) || Number(asset.size_bytes) === size);
+};
+
 export function createAssetEnsurer({ assets, tokens, storage, download, limits }) {
   return async function ensureAsset(acq, assetKey) {
     const meta = acq.assets?.[assetKey];
     if (!meta?.https_href) throw new JobError("no_download_url", "This scene's image has no download URL.");
     const existing = await assets.find(acq.id, assetKey);
-    if (existing) return existing;
+    // The database may remember a download whose file is gone (new computer, cleaned folder) or was cut short.
+    if (existing && assetFileIsGood(storage, existing)) return existing;
     const rel = `assets/${acq.id}/${assetKey}${extFor(meta.type)}`;
     const token = await tokens.getToken();
     await storage.ensureDir(rel);
@@ -36,16 +42,28 @@ export function createAssetEnsurer({ assets, tokens, storage, download, limits }
 
 export function createChipHandler({ acquisitions, assets, chips, tokens, storage, download, mlChip, limits }) {
   const ensureAsset = createAssetEnsurer({ assets, tokens, storage, download, limits });
-  return async function prepareChip({ acquisition_id, lon, lat, size_px }) {
+  // refresh: cut the preview again even if one is saved. A saved preview whose image file is missing is rebuilt too.
+  return async function prepareChip({ acquisition_id, lon, lat, size_px, refresh = false }) {
     const acq = await acquisitions.findById(acquisition_id);
     if (!acq) throw new JobError("acquisition_not_found", "Scene not found.");
     const key = chipKey(lon, lat, size_px);
     const existing = await chips.findByKey(acq.id, key);
-    if (existing) return { chip_id: existing.id, reused: true };
+    if (existing && !refresh && storage.exists(existing.storage_path)) return { chip_id: existing.id, reused: true };
 
     const assetKey = acq.visual_asset_key;
     if (!assetKey) throw new JobError("no_visual_asset", "This scene has no true-colour image asset.");
     const asset = await ensureAsset(acq, assetKey);
+
+    if (existing) {
+      const displayRel = existing.storage_path.replace(/\.png$/, ".display.png");
+      await storage.ensureDir(existing.storage_path);
+      const r = await mlChip({ path: asset.storage_path, out_path: existing.storage_path, display_out_path: displayRel, lon, lat, size_px });
+      await chips.update(existing.id, {
+        asset_id: asset.id, width_px: r.width_px, height_px: r.height_px, pin_x: r.pin_px.x, pin_y: r.pin_px.y, gsd_m: r.gsd_m, crs: r.crs,
+        nodata_fraction: r.nodata_fraction, bounds: r.bounds, sha256: r.sha256,
+      });
+      return { chip_id: existing.id, reused: false, rebuilt: true };
+    }
 
     const id = crypto.randomUUID();
     const outRel = `chips/${id}.png`;

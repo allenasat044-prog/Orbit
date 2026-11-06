@@ -3,17 +3,29 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: oklch(1 0 0); --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0); --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0); --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0); --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0); --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0); --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0); --accent-foreground: oklch(0.205 0 0);
+  --background: #f5f7fc; --foreground: #0f172a;
+  --card: oklch(1 0 0 / 0.86); --card-foreground: #0f172a;
+  --popover: #ffffff; --popover-foreground: #0f172a;
+  --primary: #3a5bd9; --primary-foreground: #ffffff;
+  --secondary: #e7ecf8; --secondary-foreground: #0f172a;
+  --muted: #e9eef8; --muted-foreground: #475569;
+  --accent: #dfe7fb; --accent-foreground: #0f172a;
   --destructive: oklch(0.577 0.245 27.325); --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0); --input: oklch(0.922 0 0); --ring: oklch(0.708 0 0);
+  --border: oklch(0.25 0.04 262 / 0.13); --input: oklch(0.25 0.04 262 / 0.2); --ring: #3a5bd9;
   --chart-1: oklch(0.32 0 0); --chart-2: oklch(0.88 0 0); --chart-3: oklch(0.55 0 0);
   --chart-4: oklch(0.15 0 0); --chart-5: oklch(0.72 0 0);
+  --file-tree-bg: oklch(1 0 0 / 0.7); --file-tree-hover: oklch(0.25 0.04 262 / 0.07); --folder-icon: oklch(0.45 0.08 262);
+
+  /* text on the page, from strongest to faintest, and the accent colour for links */
+  --ink: #0f172a; --ink-soft: #1e293b; --ink-muted: #475569; --ink-faint: #5a6a82; --link: #2f4fd1; --ok: #08795a;
+  /* lines, hover washes, sunken boxes and card surfaces */
+  --line: oklch(0.25 0.04 262 / 0.13); --line-strong: oklch(0.25 0.04 262 / 0.24);
+  --wash: oklch(0.25 0.04 262 / 0.05); --wash-strong: oklch(0.25 0.04 262 / 0.1);
+  --sunk: oklch(0.25 0.04 262 / 0.06); --surface: oklch(1 0 0 / 0.7);
+  /* spotlight cards */
+  --glow-backdrop: hsl(0 0% 100% / 0.62); --glow-border: hsl(225 30% 40% / 0.2); --glow-shadow: hsl(225 40% 30% / 0.35);
+  /* page background behind everything */
+  --page-bg: radial-gradient(ellipse at 6% 15%, #ffffff 0%, #f1f4fb 55%, #e5ecf9 100%);
 }
 .dark {
   --background: #0d1526; --foreground: #f3f6ff;
@@ -27,6 +39,14 @@
   --border: oklch(1 0 0 / 0.1); --input: oklch(1 0 0 / 0.15); --ring: #8daaff;
   --chart-1: oklch(0.75 0 0); --chart-2: oklch(0.45 0 0); --chart-3: oklch(0.6 0 0);
   --chart-4: oklch(0.9 0 0); --chart-5: oklch(0.35 0 0);
+  --file-tree-bg: oklch(0.17 0.03 262 / 0.65); --file-tree-hover: oklch(1 0 0 / 0.08); --folder-icon: oklch(0.97 0 0);
+
+  --ink: #ffffff; --ink-soft: #dbe4f7; --ink-muted: #b0bed9; --ink-faint: #7f8db0; --link: #8daaff; --ok: #7ee0c3;
+  --line: oklch(1 0 0 / 0.1); --line-strong: oklch(1 0 0 / 0.2);
+  --wash: oklch(1 0 0 / 0.05); --wash-strong: oklch(1 0 0 / 0.1);
+  --sunk: oklch(0 0 0 / 0.25); --surface: oklch(1 0 0 / 0.035);
+  --glow-backdrop: hsl(0 0% 60% / 0.08); --glow-border: hsl(0 0% 60% / 0.16); --glow-shadow: black;
+  --page-bg: radial-gradient(ellipse at 6% 15%, #151e32 0%, #0d1526 50%, #101e38 100%);
 }
 @theme inline {
   --color-background: var(--background); --color-foreground: var(--foreground);
@@ -38,6 +58,17 @@
   --color-accent: var(--accent); --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive); --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border); --color-input: var(--input); --color-ring: var(--ring);
+  --color-ink: var(--ink); --color-ink-soft: var(--ink-soft); --color-ink-muted: var(--ink-muted); --color-ink-faint: var(--ink-faint);
+  --color-link: var(--link); --color-ok: var(--ok);
+  --color-line: var(--line); --color-line-strong: var(--line-strong);
+  --color-wash: var(--wash); --color-wash-strong: var(--wash-strong); --color-sunk: var(--sunk); --color-surface: var(--surface);
+  --color-file-tree-bg: var(--file-tree-bg); --color-file-tree-hover: var(--file-tree-hover); --color-folder-icon: var(--folder-icon);
 }
 body { margin: 0; background: var(--background); color: var(--foreground); font-family: system-ui, sans-serif; }
+html { color-scheme: light; }
+html.dark { color-scheme: dark; }
+/* smooth theme change, but not for people who asked for less motion */
+@media (prefers-reduced-motion: no-preference) {
+  body, header, main, section, aside, li { transition: background-color .25s ease, border-color .25s ease, color .25s ease; }
+}
 .orbit-search-input::placeholder { color: #565656; opacity: 1; }

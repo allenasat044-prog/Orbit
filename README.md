@@ -49,14 +49,16 @@ This README describes everything built so far, how it fits together, how to run 
 | 5 | Monitored locations and update runs feeding the Dashboard | Delivered, awaiting your test |
 | 6a | Research model registry: EarthGPT, SkySenseGPT, TerraScope, RS-LLaVA, MTRS paper recorded honestly as unavailable, with reasons | Delivered |
 | 6b | GeoRSCLIP scene tags, caption match scores, Compare models | Delivered, real weights not yet run on your Mac |
-| 7 | Historical change (same pin across dates, change maps) | Done |
-| 8 | Weather forecast | in progress done mostly |
-| 9 | Personal library (Bookmarks, Lists, Labels, Records, profile data) | Planned |
+| 7 | Historical change (same pin across dates, change maps) | Planned |
+| 8 | Weather forecast | Planned |
+| 9 | Personal library: Bookmarks page (folders shown as a tree; saving asks which folder) and a basic Profile page (photo, cover, name, username, email, location, website, bio) | Delivered, awaiting your test |
+| FIX | One bookmark per place (with a Merge duplicates button), and a full Analysis page: image description, model comparison, historical change with a history list, and weather with a satellite clarity outlook | Delivered, awaiting your test |
+| POLISH | Interface polish using 21st.dev components: spotlight cards, a bento Dashboard, the morphing-square loader, a light and dark theme, the topography page background and a signed-in account menu | Delivered, awaiting your test |
 | 10 | Automation and hardening (scheduled runs, API docs, security review) | Planned |
 | Hosting | Vercel + Supabase, Google and GitHub sign-in, SEO, one URL | Planned |
 | Final | Frontend enhancement (Dock, Slidebar, search bar, background, themes, profile page, F&Q) | Planned |
 
-The **Analysis** and **Updates** pages are still the original "Not built yet" placeholders.
+The **Library** (bookmarks) and **Profile** pages are new in stage 9, with a Profile button next to Log in and Sign up.
 
 ## How it fits together
 
@@ -233,6 +235,9 @@ All API settings live in `server/.env`. Never commit this file.
 | `JWT_EXPIRES_IN` | `7d` | Token lifetime |
 | `ML_SERVICE_URL` | `http://localhost:8000` | Where the ML service runs |
 | `CORS_ORIGIN` | `http://localhost:5173` | Allowed website origin |
+| `PUBLIC_URL` | `http://localhost:5173` | The address people type in the browser. Google/GitHub sign-in comes back here |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | none | Turns on "Continue with Google" (see [Google and GitHub sign-in](#google-and-github-sign-in)) |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | none | Turns on "Continue with GitHub" |
 | `COPERNICUS_USERNAME`, `COPERNICUS_PASSWORD` | none | Needed to download scenes |
 | `COPERNICUS_STAC_URL` | CDSE STAC v1 | Catalogue address |
 | `COPERNICUS_TOKEN_URL` | CDSE identity service | Login service |
@@ -253,6 +258,38 @@ ML service settings (environment variables, all optional):
 | `STORAGE_DIR` | Same folder as the API (default `../storage`) |
 | `ORBIT_DEVICE` | Force `cpu`, `mps` or `cuda` |
 | `ORBIT_DTYPE` | Force `float16`, `bfloat16` or `float32` if the Apple GPU gives trouble |
+
+## Google and GitHub sign-in
+
+The login and sign-up pages have **Continue with Google** and **Continue with GitHub** buttons. They stay switched off until you add keys to `server/.env`; without keys the buttons show a short "isn't set up on this server yet" message.
+
+**How it works.** The browser goes to Google or GitHub, the person approves, and the provider sends them back to the API with a one-time code. The API swaps the code for the person's verified email (the secret never reaches the browser), finds or creates the account, and gives the website the same login token that email and password sign-in gives. A state check and a short-lived cookie stop forged or replayed sign-ins, and Google also uses PKCE.
+
+**Accounts.** The first time someone signs in with a provider, an account is created with their name and verified email (and no password). If an account with that email already exists, the provider is connected to it. Because email addresses on password sign-ups are not verified, **connecting a provider to an existing password account also removes that account's password**, so nobody who registered someone else's email can keep a way in. That person then signs in with the provider. Providers that do not share a verified email are refused.
+
+**Callback addresses.** Register these exact addresses with the providers (they go through the website's address, so one URL works for development and, later, hosting):
+
+| Provider | Callback address (development) |
+|---|---|
+| Google | `http://localhost:5173/api/auth/oauth/google/callback` |
+| GitHub | `http://localhost:5173/api/auth/oauth/github/callback` |
+
+When you host the site, add the same paths with your real address (for example `https://yourname.vercel.app/api/auth/oauth/google/callback`) and set `PUBLIC_URL` to that address.
+
+**Google keys.**
+1. Open the [Google Cloud Console](https://console.cloud.google.com/) and create a project.
+2. Go to **APIs & Services → OAuth consent screen** (also called **Google Auth Platform**). Choose **External**, fill in the app name and your email, and keep the scopes `email` and `profile`.
+3. While the app is in **Testing**, only the Google accounts listed as **Test users** can sign in. Add your own Gmail address there.
+4. Go to **Credentials → Create credentials → OAuth client ID** (or **Clients → Create client**), choose **Web application**, and under **Authorized redirect URIs** add the Google address from the table above.
+5. Copy the **Client ID** and **Client secret** into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+
+**GitHub keys.**
+1. Open GitHub, then **Settings → Developer settings → OAuth Apps → New OAuth App**.
+2. Set **Homepage URL** to `http://localhost:5173` and **Authorization callback URL** to the GitHub address from the table above.
+3. After you register it, copy the **Client ID**, press **Generate a new client secret**, and copy the secret.
+4. Put them in `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`.
+
+Then restart the API. Google and GitHub change these screens from time to time; if a name has moved, the redirect address is the part that must match exactly.
 
 ## Feature guide
 
@@ -279,6 +316,70 @@ The preview job:
 Sizes: Close 128 px (1.3 km), Medium 256 px (2.6 km), Wide 512 px (5.1 km). The preview is placed on the globe, and the large blue scene outline is hidden while it shows.
 
 Sentinel-2 true colour is 10 m per pixel, so roads, fields, water and large buildings show, but individual houses and cars do not. The sharpened display image only improves how it looks; it adds no real detail. *Show pixels* switches to the true 10 m pixels.
+
+### Dashboard
+
+The Dashboard uses the bento layout of the 21st.dev "web3-bento" component, filled with Orbit EO's own numbers. Everyone sees the public tiles; the personal ones need a login.
+
+| Tile | Shows |
+|---|---|
+| Welcome | New scenes found in the last 30 days, compared with the 30 days before, and a bar for each day. |
+| Locations | Your monitored places as a stack of cards. Click a card to bring it forward. |
+| Sky | Forecast cloud cover (09:00-12:00, when Sentinel-2 passes) over your first place, for today and the next two days. |
+| Scenes found vs captions made | Running totals over 1 week, 1 month or 3 months, and the share of scenes that have a caption. |
+| Your library | Captions, bookmarks, folders and locations, each linking to its page. |
+| Monitoring | Run success rate, last check, failed tasks, new scenes this month, the last ten runs, and the **Check for new scenes now** button. |
+| System status | The API, database, AI models and imagery source, with response times. |
+| Update runs | A bar per run, with averages. |
+| Recent activity | Your latest captions, bookmarks, locations and runs (public runs if you are logged out). |
+
+Loading uses the morphing square (`src/components/ui/morphing-square.tsx`). For a button that can be busy, wrap its label in `BusyLabel` (`src/components/ui/busy-label.tsx`).
+
+### Theme, background and account menu (POLISH)
+
+- **Theme.** The sun/moon button next to Profile switches between the light and dark theme. The choice is remembered on this computer; until you choose, the page follows your computer's own setting. All colours come from theme tokens in `src/index.css` (`text-ink`, `text-ink-muted`, `border-line`, `bg-surface`, `text-link` and so on), so a new component should use those, not fixed colours.
+- **Background.** Every page except the landing page (which has its own scene) and the FAQ page (which keeps its plain grid) has slowly moving contour lines behind it. They rise under the mouse and ripple when you click empty space. It is drawn at 30 frames a second and a lower resolution to be easy on laptops, pauses when the tab is hidden, and holds still if your system asks for reduced motion. It lives in `src/components/app-background.tsx`; add a path to `PLAIN` or `OWN_SCENE` there to switch it off for a page.
+- **Signed in.** Once you log in, Log in and Sign up are replaced by your picture and first name with a green dot. Its menu has Profile, Bookmarks and Log out. A login the server no longer accepts is cleared automatically, so the header never shows a login that has expired.
+
+### Spotlight cards (POLISH)
+
+Cards across the app (Analysis, Library, Captions, Profile, FAQ, Contact, and the panels in Explore) use the 21st.dev spotlight card: a soft glow and a lit border that follow the mouse. The Dashboard keeps its own cards.
+
+For a new card, use the `Panel` shortcut from `src/components/ui/spotlight-card.tsx`:
+
+```tsx
+import { Panel } from "@/components/ui/spotlight-card";
+
+<Panel as="section" className="space-y-4" aria-label="My card">…</Panel>
+```
+
+`as` picks the HTML element (`section`, `li`, `article`…). Padding and corners are changed with normal classes, and `radius` (in pixels) should match the card's corner class (16 for `rounded-2xl`, 24 for `rounded-3xl`). `glowColor` picks the colour family. Cards can be nested. The glow is off on touch screens, and all cards share one mouse listener.
+
+### Analysis page
+
+Open it from the **Analysis** nav button, from **Open in Analysis** under the Explore map, or from **Analyse this place** on a bookmark. Choose a place (a name, coordinates, one of your monitored locations or one of your bookmarks) and pick how much ground to look at (Close, Medium or Wide). The page then has four tools:
+
+| Tool | What it does |
+|---|---|
+| Image description | Pick a scene and see its picture (the red ring is your place), the scene facts, and an AI description. You can bookmark the place with that description attached. |
+| Compare models | Asks every available AI model about the same picture. Shows each answer, how long it took, a rough image match, scene tags with percentages, and which models are not available here and why. |
+| Historical change | Pick a **Before** and an **After** scene, then slide between the two pictures. It reports hectares changed, the share of usable area, how much was cloud, and what changed into what. Every run is saved under **My past analyses**. |
+| Weather | A 7-day forecast, plus a **satellite clarity outlook**: forecast cloud cover around the Sentinel-2 morning pass, and the best day for a clear picture. |
+
+Differences between two pictures are not confirmed real-world events. Lighting, season, haze and alignment can all create apparent change.
+
+### Bookmarks: one per place
+
+A place can be bookmarked only once. Places less than about 55 m apart count as the same place, because a map click, a search and a saved caption land a few metres apart. Saving a place that is already bookmarked opens the existing bookmark for editing instead, and adds the new caption to it if it had none (a bookmark keeps the caption it already has). **Merge duplicates** on the Library page cleans up duplicates made before this rule: the oldest bookmark at a place is kept and takes any caption, folder or note the others had.
+
+### Fresh run and saved previews
+
+Saved previews are reused, which makes repeat visits instant. Two things keep them honest:
+
+- **Fresh run: re-check area** (button under the map, and in the Explore sidebar) searches for scenes over your pin again and cuts a brand-new preview of the newest one (or of the scene you were looking at), even if one is already saved. **Refresh image** on an open preview does the same for just that scene.
+- A saved preview whose image file is missing from `storage/` is rebuilt automatically, in place, so its captions and bookmarks stay attached. The scene file is downloaded again only if it is missing or incomplete.
+
+A rebuilt preview of the same scene and pin looks the same, because the satellite picture itself does not change. New pictures arrive when new scenes are captured over the pin.
 
 ### Captions
 
@@ -321,6 +422,11 @@ All routes are under `/api`. Errors look like `{"error": {"code": "...", "messag
 | GET | `/updates/status` | Running run, last run, last success |
 | GET | `/updates/history` | Runs, newest first (`limit` up to 200, `cursor`) |
 | POST | `/auth/signup`, `/auth/login` | Returns `{token, user}` |
+| GET | `/analysis` | My past change analyses, newest first |
+| GET | `/library/bookmarks/nearby?lat=&lon=` | My bookmark at (about) this place, or `null` |
+| POST | `/library/bookmarks/merge-duplicates` | Merge bookmarks that sit at the same place |
+| GET | `/auth/oauth/google`, `/auth/oauth/github` | Starts "Continue with Google / GitHub" (the browser is redirected) |
+| GET | `/auth/oauth/:provider/callback` | Where Google / GitHub send people back. Redirects to `/auth/callback#token=...` |
 
 ### Requires login
 
@@ -433,6 +539,7 @@ Tests use fakes for the network (Copernicus, geocoder, ML service) and for the A
 | Apple GPU gives odd or empty results | Set `ORBIT_DTYPE=float32` before starting the ML service |
 | An update run says no monitored locations | Press *Monitor this location* on Explore first |
 | `docker: command not found` | Docker is not needed. The project uses Supabase for the database |
+| Preview shows a broken image, or the ML log shows `POST /caption 404` | The database remembers a preview whose image file is not in `storage/` (for example after moving the project folder). Press **Refresh image** in Explore. The image is rebuilt, and captions work again |
 
 ## Known limitations
 
@@ -452,7 +559,9 @@ Planned stages, in order:
 - **6 (remaining).** Confirm GeoRSCLIP on your machine. Optional: add more runnable models.
 - **7. Historical change.** The same pin across dates, change maps, evidence masks, and an evaluation approach that scores change and no-change cases separately.
 - **8. Weather forecast.** A weather data service and a forecast time slider. The provider is still to be chosen and its licence checked.
-- **9. Personal library.** Bookmarks, Lists, Labels and Records, plus profile data.
+- **9. Personal library.** A bookmarks page where folders are shown as a tree, and a basic profile page.
+- **FIX.** One bookmark per place, and the Analysis page.
+- **POLISH.** Make the interface look better with 21st.dev components.
 - **10. Automation and hardening.** Weekly scheduled runs, API documentation, security review, rollback.
 - **Hosting.** Host on Vercel with Supabase for the database and Google and GitHub sign-in, set up SEO, and serve everything from one URL with no manual terminal steps. The ML service and job queue will need a separate always-on host.
 - **Final. Frontend enhancement.** Explore layout from the design board (search on top, side list of views, globe), Dock, Slidebar, search bar, space background, themes, GitHub-style profile page, F&Q page.

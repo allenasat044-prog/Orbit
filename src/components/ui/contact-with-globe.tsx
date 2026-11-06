@@ -15,6 +15,7 @@ import type {
   GeometryObject,
 } from "topojson-specification";
 import type { GeoPermissibleObjects } from "d3";
+import { Panel } from "@/components/ui/spotlight-card";
 
 const smoothEase = [0.25, 0.1, 0.25, 1] as const;
 
@@ -656,7 +657,7 @@ export default function ContactWithGlobe({
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.9, delay: 0.15, ease: smoothEase }}
-            className="text-4xl md:text-5xl lg:text-6xl font-bold text-zinc-900 dark:text-white"
+            className="text-4xl md:text-5xl lg:text-6xl font-bold text-zinc-900 dark:text-ink"
           >
             {title}
           </motion.h2>
@@ -681,7 +682,7 @@ export default function ContactWithGlobe({
             className="flex flex-col gap-6"
           >
             <div className="flex flex-col gap-1">
-              <h3 className="text-xl font-semibold text-zinc-900 dark:text-white">Get in touch</h3>
+              <h3 className="text-xl font-semibold text-zinc-900 dark:text-ink">Get in touch</h3>
               <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed max-w-xs">
                 Reach out via any channel below. We typically reply within one business day.
               </p>
@@ -696,7 +697,7 @@ export default function ContactWithGlobe({
                   whileInView={{ opacity: 1, x: 0 }}
                   viewport={{ once: true }}
                   transition={{ duration: 0.5, delay: 0.3 + i * 0.1, ease: smoothEase }}
-                  className="group flex items-center gap-3 w-fit text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors duration-200"
+                  className="group flex items-center gap-3 w-fit text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-ink transition-colors duration-200"
                 >
                   <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 group-hover:border-rose-300 dark:group-hover:border-rose-500/40 group-hover:bg-rose-50 dark:group-hover:bg-rose-500/10 flex items-center justify-center shrink-0 transition-all duration-200">
                     <Icon className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500 group-hover:text-rose-500 dark:group-hover:text-rose-400 transition-colors duration-200" />
@@ -724,10 +725,10 @@ export default function ContactWithGlobe({
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 1.0, delay: 0.35, ease: smoothEase }}
-            className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 sm:p-8 flex flex-col gap-5"
           >
+            <Panel radius={16} backdrop="hsl(240 5.9% 10% / 0.85)" className="flex flex-col gap-5 p-6 sm:p-8">
             <div>
-              <h3 className="text-lg font-semibold text-zinc-900 dark:text-white mb-0.5">Send a message</h3>
+              <h3 className="text-lg font-semibold text-zinc-900 dark:text-ink mb-0.5">Send a message</h3>
               <p className="text-sm text-zinc-500 dark:text-zinc-400">
                 Fill out the form and we'll get back to you promptly.
               </p>
@@ -760,10 +761,11 @@ export default function ContactWithGlobe({
               />
             </div>
 
-            <Button className="w-fit h-11 px-8 rounded-xl font-semibold text-sm bg-zinc-900 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-white dark:text-zinc-900 group">
+            <Button className="w-fit h-11 px-8 rounded-xl font-semibold text-sm bg-zinc-900 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-100 text-ink dark:text-zinc-900 group">
               Submit
               <ArrowRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-1" />
             </Button>
+            </Panel>
           </motion.div>
         </div>
       </div>

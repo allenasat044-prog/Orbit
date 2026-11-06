@@ -210,6 +210,7 @@ function handlerKit(over = {}) {
     },
     chips: {
       findByKey: async (a, k) => state.chips.get(`${a}:${k}`) ?? null,
+      update: async (id, fields) => { const row = [...state.chips.values()].find((c) => c.id === id); Object.assign(row, fields); state.updates = (state.updates ?? 0) + 1; return row; },
       insert: async (c) => {
         const key = `${c.acquisition_id}:${c.center_key}`;
         if (over.raceExisting && !state.chips.has(key)) { state.chips.set(key, { id: "existing-chip" }); }
@@ -316,12 +317,14 @@ test("chip request returns 202 with a job, or 200 with the chip if it already ex
   assert.equal(body.job.status, "queued");
   assert.deepEqual(s.enqueued[0].params, { acquisition_id: ACQ, lon: 115, lat: 67.5, size_px: 512 });
   s.chipsMap.set(`${ACQ}:${chipKey(115, 67.5, 512)}`, { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", acquisition_id: ACQ, center_lat: 67.5, center_lon: 115, size_px: 512, width_px: 512, height_px: 512, pin_x: 256, pin_y: 256, bounds: FOOTPRINT, storage_path: "chips/c.png" });
+  fs.mkdirSync(path.join(s.storage.root, "chips"), { recursive: true });
+  fs.writeFileSync(s.storage.resolve("chips/c.png"), "png");
   const again = await s.post(`/api/imagery/${ACQ}/chip`, PIN);
   const againBody = await again.json();
   s.close();
   assert.equal(again.status, 200);
   assert.equal(againBody.job, null);
-  assert.equal(againBody.chip.image_url, "/api/chips/cccccccc-cccc-4ccc-8ccc-cccccccccccc/image");
+  assert.equal(againBody.chip.image_url, "/api/chips/cccccccc-cccc-4ccc-8ccc-cccccccccccc/image?v=2");
   assert.deepEqual(againBody.chip.pin_px, { x: 256, y: 256 });
   assert.equal(s.enqueued.length, 1);
 });
@@ -348,10 +351,10 @@ test("chip metadata and image are served, and missing files give a clean 404", a
   const png = Buffer.from("89504e470d0a1a0a", "hex");
   fs.writeFileSync(s.storage.resolve(`chips/${id}.png`), png);
   const meta = await fetch(`${s.base}/api/chips/${id}`);
-  const img = await fetch(`${s.base}/api/chips/${id}/image`);
+  const img = await fetch(`${s.base}/api/chips/${id}/image?v=2`);
   const bytes = Buffer.from(await img.arrayBuffer());
   fs.rmSync(s.storage.resolve(`chips/${id}.png`));
-  const gone = await fetch(`${s.base}/api/chips/${id}/image`);
+  const gone = await fetch(`${s.base}/api/chips/${id}/image?v=2`);
   const unknown = await fetch(`${s.base}/api/chips/dddddddd-dddd-4ddd-8ddd-dddddddddddd`);
   s.close();
   assert.equal(meta.status, 200);
@@ -383,9 +386,85 @@ test("the image route serves the sharper display version on request and falls ba
   const display = await get("?variant=display");
   const native = await get();
   s.close();
-  assert.equal(meta.chip.display_url, `/api/chips/${id}/image?variant=display`);
-  assert.equal(meta.chip.image_url, `/api/chips/${id}/image`);
+  assert.equal(meta.chip.display_url, `/api/chips/${id}/image?variant=display&v=2`);
+  assert.equal(meta.chip.image_url, `/api/chips/${id}/image?v=2`);
   assert.deepEqual(before, [200, "NATIVE"]);
   assert.deepEqual(display, [200, "DISPLAY"]);
   assert.deepEqual(native, [200, "NATIVE"]);
+});
+
+// ---------- self-healing and fresh runs ----------
+test("a saved preview whose image file is gone is rebuilt in place, keeping the same record", async () => {
+  const k = handlerKit();
+  const first = await k.handler(P);
+  assert.equal(k.state.ml, 1);
+  fs.rmSync(k.storage.resolve(`chips/${first.chip_id}.png`));
+  const again = await k.handler(P);
+  assert.equal(again.chip_id, first.chip_id);
+  assert.equal(again.reused, false);
+  assert.equal(again.rebuilt, true);
+  assert.equal(k.state.ml, 2);
+  assert.equal(k.state.updates, 1);
+  assert.equal(k.state.mlBodies[1].out_path, `chips/${first.chip_id}.png`);
+  assert.equal(k.state.mlBodies[1].display_out_path, `chips/${first.chip_id}.display.png`);
+  assert.ok(fs.existsSync(k.storage.resolve(`chips/${first.chip_id}.png`)));
+  assert.equal(k.state.downloads, 1);
+});
+
+test("refresh cuts the preview again even when the file is fine", async () => {
+  const k = handlerKit();
+  const first = await k.handler(P);
+  const same = await k.handler(P);
+  assert.equal(same.reused, true);
+  assert.equal(k.state.ml, 1);
+  const fresh = await k.handler({ ...P, refresh: true });
+  assert.equal(fresh.chip_id, first.chip_id);
+  assert.equal(fresh.reused, false);
+  assert.equal(k.state.ml, 2);
+  assert.equal(k.state.downloads, 1);
+});
+
+test("a remembered download whose file is missing or cut short is downloaded again", async () => {
+  const k = handlerKit({ download: async ({ destPath }) => { k.state.downloads++; fs.writeFileSync(destPath, "jp2"); return { sha256: "abc", size: 3, contentType: "image/jp2" }; } });
+  await k.handler(P);
+  const asset = [...k.state.assets.values()][0];
+  fs.rmSync(k.storage.resolve(asset.storage_path));
+  await k.handler({ ...P, lon: 114.91 });
+  assert.equal(k.state.downloads, 2);
+  fs.writeFileSync(k.storage.resolve(asset.storage_path), "jp");
+  await k.handler({ ...P, lon: 114.92 });
+  assert.equal(k.state.downloads, 3);
+  await k.handler({ ...P, lon: 114.93 });
+  assert.equal(k.state.downloads, 3);
+});
+
+test("chip request: a saved preview with a missing file, or refresh:true, is queued instead of reused", async () => {
+  const s = routeKit();
+  const id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  s.chipsMap.set(`${ACQ}:${chipKey(115, 67.5, 512)}`, { id, acquisition_id: ACQ, center_lat: 67.5, center_lon: 115, size_px: 512, width_px: 512, height_px: 512, pin_x: 256, pin_y: 256, bounds: FOOTPRINT, storage_path: `chips/${id}.png` });
+  const missing = await s.post(`/api/imagery/${ACQ}/chip`, PIN);
+  assert.equal(missing.status, 202);
+  assert.deepEqual(s.enqueued[0].params, { acquisition_id: ACQ, lon: 115, lat: 67.5, size_px: 512 });
+  fs.mkdirSync(path.join(s.storage.root, "chips"), { recursive: true });
+  fs.writeFileSync(s.storage.resolve(`chips/${id}.png`), "png");
+  const reused = await s.post(`/api/imagery/${ACQ}/chip`, PIN);
+  assert.equal(reused.status, 200);
+  const refreshed = await s.post(`/api/imagery/${ACQ}/chip`, { ...PIN, refresh: true });
+  assert.equal(refreshed.status, 202);
+  assert.deepEqual(s.enqueued[1].params, { acquisition_id: ACQ, lon: 115, lat: 67.5, size_px: 512, refresh: true });
+  const bad = await s.post(`/api/imagery/${ACQ}/chip`, { ...PIN, refresh: "yes" });
+  s.close();
+  assert.equal(bad.status, 400);
+});
+
+test("a missing image file is never remembered by the browser", async () => {
+  const s = routeKit();
+  const id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  s.chipsMap.set("k", { id, acquisition_id: ACQ, center_lat: 1, center_lon: 2, size_px: 512, width_px: 512, height_px: 512, pin_x: 1, pin_y: 1, bounds: FOOTPRINT, storage_path: `chips/${id}.png` });
+  const gone = await fetch(`${s.base}/api/chips/${id}/image?v=2`);
+  const body = await gone.json();
+  s.close();
+  assert.equal(gone.status, 404);
+  assert.equal(gone.headers.get("cache-control"), "no-store");
+  assert.equal(body.error.code, "image_missing");
 });

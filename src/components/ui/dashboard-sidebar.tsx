@@ -43,7 +43,7 @@ function WorkspaceSwitcher({ title, subtitle, options, emptyText, onOpen, onPick
     <div className="relative">
       <div
         onClick={toggle}
-        className="flex items-center justify-between px-2 py-2 mb-4 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer transition-colors select-none group"
+        className="flex items-center justify-between px-2 py-2 mb-4 rounded-lg hover:bg-black/5 dark:hover:bg-wash cursor-pointer transition-colors select-none group"
       >
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-[6px] bg-primary text-primary-foreground flex items-center justify-center font-semibold text-[13px] shadow-sm">
@@ -69,7 +69,7 @@ function WorkspaceSwitcher({ title, subtitle, options, emptyText, onOpen, onPick
                   onPick?.(o.id);
                   setIsOpen(false);
                 }}
-                className="px-3 py-2 mx-1 text-[13px] rounded-md cursor-pointer transition-colors truncate text-foreground/80 hover:bg-black/5 dark:hover:bg-white/5"
+                className="px-3 py-2 mx-1 text-[13px] rounded-md cursor-pointer transition-colors truncate text-foreground/80 hover:bg-black/5 dark:hover:bg-wash"
               >
                 {o.label}
               </div>
@@ -82,7 +82,7 @@ function WorkspaceSwitcher({ title, subtitle, options, emptyText, onOpen, onPick
                     action.onClick();
                     setIsOpen(false);
                   }}
-                  className="px-3 py-2 mx-1 text-[13px] text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-md cursor-pointer flex items-center gap-2 transition-colors"
+                  className="px-3 py-2 mx-1 text-[13px] text-muted-foreground hover:bg-black/5 dark:hover:bg-wash rounded-md cursor-pointer flex items-center gap-2 transition-colors"
                 >
                   <span className="text-[16px] leading-none mb-0.5">+</span> {action.label}
                 </div>
@@ -123,7 +123,7 @@ function NavItem({
         aria-expanded={hasChildren ? isOpen : undefined}
         onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), handleClick())}
         className={`group flex items-center justify-between px-2.5 py-[7px] rounded-[6px] cursor-pointer transition-all duration-200 select-none outline-none focus-visible:ring-1 focus-visible:ring-primary/50
-          ${isActive ? "bg-black/5 dark:bg-white/10 text-foreground font-medium" : "text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 hover:text-foreground/90"}
+          ${isActive ? "bg-black/5 dark:bg-wash-strong text-foreground font-medium" : "text-muted-foreground hover:bg-black/5 dark:hover:bg-wash hover:text-foreground/90"}
           ${item.dim ? "opacity-60" : ""}
         `}
         style={{ paddingLeft: `${level * 12 + 10}px` }}
@@ -153,7 +153,7 @@ function NavItem({
       {hasChildren && (
         <div className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${isOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}>
           <div className="overflow-hidden min-h-0 relative flex flex-col gap-0.5 mt-0.5">
-            <div className="absolute top-0 bottom-0 border-l border-black/5 dark:border-white/5" style={{ left: `${level * 12 + 17.5}px` }} />
+            <div className="absolute top-0 bottom-0 border-l border-black/5 dark:border-line" style={{ left: `${level * 12 + 17.5}px` }} />
             {item.children!.map((child) => (
               <NavItem key={child.id} item={child} activeId={activeId} onSelect={onSelect} level={level + 1} />
             ))}

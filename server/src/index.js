@@ -32,6 +32,8 @@ import { createUpdateRunsRepo } from "./updates/repo.js";
 import { createUpdateEngine } from "./updates/engine.js";
 import { createSceneProcessor } from "./updates/process.js";
 import { createUpdateRouter } from "./updates/routes.js";
+import { createLibraryRepo } from "./library/repo.js";
+import { createLibraryRouter } from "./library/routes.js";
 
 if (config.jwtSecret.length < 32) {
   console.error("JWT_SECRET is missing or shorter than 32 characters. Set it in server/.env");
@@ -59,11 +61,13 @@ const assetsRepo = createAssetsRepo(pool);
 const ensureAsset = createAssetEnsurer({ assets: assetsRepo, tokens, storage, download: downloadToFile, limits: downloadLimits });
 const analyses = createAnalysesRepo(pool);
 const weather = createWeatherProvider({ baseUrl: config.weatherUrl, ttlMs: config.weatherCacheTtlMs });
-const captionHandler = createCaptionHandler({ chips, captions, mlCaption: (body) => mlCaption(config.mlServiceUrl, body) });
+const captionHandler = createCaptionHandler({ chips, captions, storage, mlCaption: (body) => mlCaption(config.mlServiceUrl, body) });
 const comparisons = createComparisonsRepo(pool);
 const regions = createRegionsRepo(pool);
 const updateRuns = createUpdateRunsRepo(pool);
 const engine = createUpdateEngine({ regions, runs: updateRuns, acquisitions, providers, processScene: createSceneProcessor({ chipHandler, captionHandler }) });
+const library = createLibraryRepo(pool);
+const usersRepo = createUsersRepo(pool);
 const runner = createJobRunner({
   repo: jobs,
   concurrency: config.jobConcurrency,
@@ -94,13 +98,14 @@ const app = createApp({
     { path: "/api", router: createWeatherRouter({ config, weather }) },
     { path: "/api", router: createAnalysisRouter({ config, acquisitions, analyses, runner, storage }) },
     { path: "/api", router: createRegionRouter({ config, regions }) },
+    { path: "/api", router: createLibraryRouter({ config, library, users: usersRepo }) },
     { path: "/api", router: createUpdateRouter({ config, runs: updateRuns, runner }) },
     { path: "/api", router: createComparisonRouter({ config, chips, comparisons, runner }) },
     { path: "/api", router: createCaptionRouter({ config, chips, captions, runner, ml: { models: () => mlModels(config.mlServiceUrl), model: (id) => mlModel(config.mlServiceUrl, id) } }) },
   ],
   config,
   providers,
-  users: createUsersRepo(pool),
+  users: usersRepo,
   acquisitions,
   geocoder: createGeocoder({ baseUrl: config.geocoderUrl, userAgent: config.geocoderUserAgent }),
   checks: {

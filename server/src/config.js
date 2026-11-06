@@ -6,6 +6,12 @@ export const config = {
   databaseSsl: process.env.DATABASE_SSL === "true",
   mlServiceUrl: process.env.ML_SERVICE_URL ?? "http://localhost:8000",
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
+  // The address people type in the browser. Sign-in with Google/GitHub comes back here.
+  publicUrl: (process.env.PUBLIC_URL ?? "http://localhost:5173").replace(/\/+$/, ""),
+  googleClientId: process.env.GOOGLE_CLIENT_ID ?? "",
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+  githubClientId: process.env.GITHUB_CLIENT_ID ?? "",
+  githubClientSecret: process.env.GITHUB_CLIENT_SECRET ?? "",
   healthTimeoutMs: Number(process.env.HEALTH_TIMEOUT_MS ?? 3000),
   copernicusStacUrl: process.env.COPERNICUS_STAC_URL ?? "https://stac.dataspace.copernicus.eu/v1/",
   jwtSecret: process.env.JWT_SECRET ?? "",

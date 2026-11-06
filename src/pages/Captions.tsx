@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getToken } from "@/lib/auth";
+import { BookmarkDialog } from "@/components/bookmark-dialog";
+import { Panel } from "@/components/ui/spotlight-card";
+import { MorphingSquare } from "@/components/ui/morphing-square";
 
 type Item = {
   id: string;
@@ -20,6 +23,18 @@ type Item = {
 const day = (iso: string) => new Date(iso).toISOString().slice(0, 10);
 const areaKm = (px: number, gsd: number | null) => `${((px * (gsd ?? 10)) / 1000).toFixed(1)} km`;
 
+// If the picture file is gone from this computer, say so instead of showing a broken image.
+function SavedImage({ src, className }: { src: string; className: string }) {
+  const [broken, setBroken] = useState(false);
+  return broken ? (
+    <div className={`${className} flex items-center justify-center border border-dashed border-line-strong p-3 text-center text-xs text-muted-foreground`}>
+      Image file missing. Open Explore and press “Refresh image”.
+    </div>
+  ) : (
+    <img src={src} alt="Satellite preview" className={className} onError={() => setBroken(true)} />
+  );
+}
+
 export default function Captions() {
   const token = getToken();
   const [items, setItems] = useState<Item[]>([]);
@@ -27,6 +42,7 @@ export default function Captions() {
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
+  const [saved, setSaved] = useState<Set<string>>(new Set());
 
   const load = async (cursor?: string) => {
     if (!token) return;
@@ -60,26 +76,28 @@ export default function Captions() {
     else setError("Could not delete that caption.");
   };
 
+  const [bookmarkTarget, setBookmarkTarget] = useState<Item | null>(null);
+
   if (!token) {
     return (
       <p className="text-muted-foreground">
-        <Link to="/login" className="text-[#8daaff] hover:underline">Log in</Link> or <Link to="/signup" className="text-[#8daaff] hover:underline">sign up</Link> to see your saved captions.
+        <Link to="/login" className="text-link hover:underline">Log in</Link> or <Link to="/signup" className="text-link hover:underline">sign up</Link> to see your saved captions.
       </p>
     );
   }
 
   return (
     <div className="space-y-4">
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
       {loaded && items.length === 0 && !error && (
         <p className="text-muted-foreground">
-          No captions yet. Open <Link to="/explore" className="text-[#8daaff] hover:underline">Explore</Link>, drop a pin, press <em>Preview</em> on a scene, then <em>Describe this image</em>.
+          No captions yet. Open <Link to="/explore" className="text-link hover:underline">Explore</Link>, drop a pin, press <em>Preview</em> on a scene, then <em>Describe this image</em>.
         </p>
       )}
       <ul className="grid gap-4 md:grid-cols-2">
         {items.map((i) => (
-          <li key={i.id} className="flex gap-4 rounded-2xl border border-white/10 p-3">
-            <img src={i.image_url} alt="Satellite preview" className="h-40 w-40 shrink-0 rounded-lg object-cover" />
+          <Panel as="li" key={i.id} className="flex gap-4 p-3">
+            <SavedImage src={i.image_url} className="h-40 w-40 shrink-0 rounded-lg object-cover" />
             <div className="flex min-w-0 flex-1 flex-col gap-2">
               <p className="text-sm">{i.caption}</p>
               <p className="text-xs text-muted-foreground">
@@ -90,14 +108,27 @@ export default function Captions() {
               </p>
               <div className="mt-auto flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">Saved {day(i.created_at)}</span>
-                <button type="button" onClick={() => void remove(i)} className="text-muted-foreground hover:text-red-400">Delete</button>
+                <span className="flex gap-4">
+                  {saved.has(i.id)
+                    ? <Link to="/library" className="text-ok hover:underline">Bookmarked ✓</Link>
+                    : <button type="button" onClick={() => setBookmarkTarget(i)} className="text-link hover:underline">Bookmark</button>}
+                  <button type="button" onClick={() => void remove(i)} className="text-muted-foreground hover:text-red-600 dark:hover:text-red-400">Delete</button>
+                </span>
               </div>
             </div>
-          </li>
+          </Panel>
         ))}
       </ul>
-      {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
-      {next && !loading && <button type="button" onClick={() => void load(next)} className="text-sm text-[#8daaff]">Load more</button>}
+      {loading && <MorphingSquare className="h-4 w-4" message="Loading…" messagePlacement="right" />}
+      {next && !loading && <button type="button" onClick={() => void load(next)} className="text-sm text-link">Load more</button>}
+      {bookmarkTarget && (
+        <BookmarkDialog
+          open
+          onOpenChange={(o) => !o && setBookmarkTarget(null)}
+          defaults={{ title: bookmarkTarget.caption.slice(0, 80), lat: bookmarkTarget.location.lat, lon: bookmarkTarget.location.lon, caption_id: bookmarkTarget.id }}
+          onSaved={() => setSaved((prev) => new Set(prev).add(bookmarkTarget.id))}
+        />
+      )}
     </div>
   );
 }

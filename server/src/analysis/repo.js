@@ -12,10 +12,12 @@ const SELECT = `
 
 export function createAnalysesRepo(pool) {
   const findById = async (id) => (await pool.query(`${SELECT} where an.id = $1`, [id])).rows[0] ?? null;
+  const listForUser = async (userId, limit) => (await pool.query(`${SELECT} where an.created_by = $1 order by an.created_at desc limit $2`, [userId, limit])).rows;
   const findByChips = async (before, after) => (await pool.query("select id from change_analyses where before_chip_id = $1 and after_chip_id = $2", [before, after])).rows[0] ?? null;
   return {
     findById,
     findByChips,
+    listForUser,
     async insert(a) {
       const r = await pool.query(
         `insert into change_analyses (before_chip_id, after_chip_id, status, scl_used, results, notes, overlay_path, created_by)

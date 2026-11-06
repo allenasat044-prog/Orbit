@@ -56,8 +56,8 @@
 .type-weather-hour { font: 700 22px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: -.04em; }
 .type-ui { font: 500 14px/1.2 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
 .type-title { font: 600 14px/1.2 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
-.text-ink { color: #f3f4f6; }
-.text-ink2 { color: #9ea0a6; }
+.text-weather-ink { color: #f3f4f6; }
+.text-weather-ink2 { color: #9ea0a6; }
 .fill-ink { fill: #f3f4f6; }
 
 /* inks */

@@ -801,16 +801,16 @@ function Header({
   return (
     <header className={className ? `${own} ${className}` : own} {...props}>
       <div className="flex flex-col gap-weather-header-gap">
-        <h2 className="m-0 type-display text-ink">{place}</h2>
-        {summary && <p className="m-0 type-meta text-ink2">{summary}</p>}
+        <h2 className="m-0 type-display text-weather-ink">{place}</h2>
+        {summary && <p className="m-0 type-meta text-weather-ink2">{summary}</p>}
       </div>
       {live !== null && (
         <div className="flex items-center gap-weather-header-led-gap h-weather-header-height">
           <Led kind={live ? "live" : "off"} />
-          <span className="type-meta text-ink2">
+          <span className="type-meta text-weather-ink2">
             {live ? "Live" : "Paused"}
           </span>
-          {clock && <span className="type-readout text-ink2">{clock}</span>}
+          {clock && <span className="type-readout text-weather-ink2">{clock}</span>}
         </div>
       )}
     </header>
@@ -929,18 +929,18 @@ function Now({
       className={className ? `${NOW[size]} ${className}` : NOW[size]}
       {...props}
     >
-      <span className="type-pixel text-ink">{deg(temp)}</span>
+      <span className="type-pixel text-weather-ink">{deg(temp)}</span>
       <div
         className={`flex flex-col items-end gap-weather-header-gap ${size === "tile" ? "pb-weather-tile-lift" : "pb-weather-screen-lift"}`}
       >
         <span
           className={
-            size === "tile" ? "type-label engraved" : "type-content text-ink"
+            size === "tile" ? "type-label engraved" : "type-content text-weather-ink"
           }
         >
           {condition}
         </span>
-        {readout && <span className="type-readout text-ink2">{readout}</span>}
+        {readout && <span className="type-readout text-weather-ink2">{readout}</span>}
       </div>
     </div>
   );
@@ -975,7 +975,7 @@ function Hours({ hours, className, ...props }: WeatherHoursProps) {
             hour={h.hour}
             className="size-weather-hour-glyph"
           />
-          <span className="type-weather-hour text-ink">{deg(h.temp)}</span>
+          <span className="type-weather-hour text-weather-ink">{deg(h.temp)}</span>
         </li>
       ))}
     </ol>
@@ -1039,7 +1039,7 @@ function Week({
         <span className="w-weather-week-value text-right type-label engraved">
           Low
         </span>
-        <span className="flex justify-between w-weather-week-bar type-readout text-ink2">
+        <span className="flex justify-between w-weather-week-bar type-readout text-weather-ink2">
           <span>{deg(lo)}</span>
           <span>{deg(lo + span / 2)}</span>
           <span>{deg(lo + span)}</span>
@@ -1061,12 +1061,12 @@ function Week({
             className="flex items-center gap-weather-week-col h-weather-week-row"
           >
             <span
-              className={`w-weather-week-day ${today ? "type-title" : "type-ui"} text-ink`}
+              className={`w-weather-week-day ${today ? "type-title" : "type-ui"} text-weather-ink`}
             >
               {d.name}
             </span>
             <WeatherGlyph kind={d.kind} className="size-weather-week-glyph" />
-            <span className="w-weather-week-value text-right type-ui text-ink2">
+            <span className="w-weather-week-value text-right type-ui text-weather-ink2">
               {deg(d.low)}
             </span>
             <svg
@@ -1081,7 +1081,7 @@ function Week({
                 <path data-part="now" d={dot(now)} className="fill-ink" />
               )}
             </svg>
-            <span className="w-weather-week-value type-title text-ink">
+            <span className="w-weather-week-value type-title text-weather-ink">
               {deg(d.high)}
             </span>
           </li>
